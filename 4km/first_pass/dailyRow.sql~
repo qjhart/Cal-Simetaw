@@ -1,0 +1,22 @@
+set search_path=4km
+create table daily_row (
+x integer,
+y integer,
+ymd date,
+year integer check (year >0),
+month integer check (month >=1 and month<=12),
+day integer check (day <=31),
+doy integer check (doy<=366),
+Tx float,
+Tn float,
+PCP float,
+ETo float,
+RF boolean,
+unique(x,y,ymd),
+foreign key (x,y) references pixels (x,y)
+);
+
+create index daily_xy on daily_row(x,y);
+create index daily_ymd on daily_row(ymd);
+create index daily_year on daily_row(year);
+create index daily_month on daily_row(month);

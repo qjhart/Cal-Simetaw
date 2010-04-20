@@ -1,0 +1,16 @@
+#! /bin/sh
+g=/proj/simetaw/gdb; 
+b=$g/etosimetaw; 
+
+for y in `seq $1 $2`; do 
+
+
+
+
+    for m in `seq -f  %02.0f 1 12`; do 
+	g.mapset gisdbase=$b location=$y mapset=$y-$m; 
+	g.remove NRF;
+	rm -f $b/$y/${y}-${m}/etc/TnTxPCPNRF.csv
+	make-eto TnTxPCPNRF.csv; 
+    done; 
+done

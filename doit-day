@@ -1,0 +1,27 @@
+#! /bin/sh
+g=/proj/simetaw/gdb; 
+b=$g/etosimetaw; 
+
+for y in 2003; do 
+   g.mapset location=${y} mapset=PERMANENT; 
+   for m in `g.mapsets -l | tr ' ' "\n" | grep "${y}-..-.."`; do 
+     g.mapset mapset=$m; 
+     make --include-dir=~/etosimetaw/bin -f ~/etosimetaw/bin/daily.mk TnTxPCPEToRF.csv; 
+   done ;
+ done
+
+
+
+# for y in `seq 1920 1939`; do 
+#     for m in 01 02 03 04 05 06 07 08 09 10 11 12; do
+#       for d in `echo $b/$y/$y-${m}-??`; do 
+# 	  day=`basename $d`; 
+# 	  if (g.mapset mapset=$day location=$y gisdbase=$b 2>/dev/null >/dev/null); then 
+# 	      make-eto RF TnTxPCPEToRF.csv
+# 	  fi; 
+#       done;
+#       if (g.mapset mapset=${y}-${m} location=$y 2>/dev/null > /dev/null); then
+# 	  make-eto NRF TnTxPCPNRF.csv
+#       fi;
+#     done
+# done

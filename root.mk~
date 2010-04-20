@@ -1,0 +1,85 @@
+#! /usr/bin/make -f
+
+ifndef configure.mk
+include configure.mk
+endif
+
+ifneq (${MAPSET},${db})
+$(error NOT in proper MAPSET ${MAPSET} != ${db})
+endif 
+
+mapsets:=$(shell ${PG} -t -q -A -c "select distinct substr(day,1,4) from ncdc.weather" | sed -e 's|^\s*|${map}/|')
+
+${mapsets}:${map}/%:
+	mkdir -p $@
+	# as a location
+	ln -s ../PERMANENT $@
+	ln -s ../2km $@
+	# These are as a mapset
+	cp ${map}/template/WIND $@
+	cp ${map}/template/VAR $@
+
+else # is YEAR
+
+ifeq (${MM},)
+
+mapsets:=$(patsubst %,${map}/${YYYY}-%,01 02 03 04 05 06 07 08 09 10 11 12)
+$(warning ${mapsets})
+
+${mapsets}:${map}/%:
+	mkdir -p $@
+	# as a location
+	ln -s ../PERMANENT $@
+	ln -s ../2km $@
+	# These are as a mapset
+	cp ${map}/../template/WIND $@
+	cp ${map}/../template/VAR $@
+
+else
+
+ifeq (${DD},)
+
+mapsets:=$(shell ${PG} -t -c "select distinct day from ncdc.weather where day::text ~'${YYYY}-${MM}-.{2}'")
+
+mapset-dirs:=$(patsubst %,${loc}/%,${mapsets})
+
+${mapset-dirs}:${loc}/%:
+	mkdir -p $@
+	cp ${loc}/../template/WIND $@
+	cp ${loc}/../template/VAR $@
+
+
+.PHONY: NRF
+NRF:$(rast)/NRF
+${rast}/NRF:
+	r.mapcalc 'NRF=$(patsubst %,"RF@%"+,${mapsets})0'
+
+.PHONY:TnTxPCPNRF.csv
+TnTxPCPNRF.csv:${etc}/TnTxPCPNRF.csv
+${etc}/TnTxPCPNRF.csv: ${rast}/mTn ${rast}/mTx ${rast}/mPCP ${rast}/NRF
+	@[[ -d $(dir $@) ]]  || mkdir $(dir $@);\
+	g.region rast=state@4km;\
+	r.mask -r input=MASK >/dev/null 2>/dev/null; r.mask input=interior_mask@4km >/dev/null 2>/dev/null;\
+	date=`g.gisenv MAPSET`;\
+	r.stats -1 -n -x mTn,mTx,mPCP,NRF 2>/dev/null | sed -e "s/^/${MAPSET} /" | tr ' ' ',' > $@;\
+	r.mask -r input=MASK >/dev/null 2>/dev/null;\
+	g.region -d;
+
+else
+
+monthly-mapset:=${YYYY}-${MM}
+monthly-rast:=$(loc)/$(monthly-mapset)/cellhd
+
+$(eval $(call daily))
+$(foreach p,Tx Tn PCP,$(eval $(call ncdc,$(p))))
+$(foreach p,PCP,$(eval $(call mult-day,$(p))))
+$(foreach p,Tx Tn,$(eval $(call add-day,$(p))))
+
+endif #DD
+
+endif #MM
+
+endif # Year or no
+
+.PHONY:mapsets
+mapsets: ${mapsets}

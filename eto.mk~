@@ -1,0 +1,312 @@
+#! /usr/bin/make -f 
+SHELL=/bin/bash
+# To do all
+
+# g=/home/groups/etosimetaw/gdb; b=$g/etosimetaw; for y in `seq 1923 2008`; do g.mapset gisdbase=$g location=etosimetaw mapset=$y; make-eto mapsets; for m in `seq -f %02.0f 1 12`; do cd $b/$y/$y-$m; g.mapset gisdbase=$b location=$y mapset=$y-$m; make-eto mapsets; for d in `echo $b/$y/$y-$m/$y-$m-??`; do day=`basename $d`; if (g.mapset mapset=$day location=$y-$m gisdbase=$b/$y 2>&1 > /dev/null); then for t in Tn Tx PCP; do if ! (g.findfile element=cellhd file=d$t); then g.remove vect=$t; make-eto d$t; fi; done; fi; done; done; done
+
+# Input Postgres DB
+db:=etosimetaw
+PG:= psql -d ${db} -h casil.ucdavis.edu -U qjhart -p 5433
+
+# Grass specific functions
+define grass_or_die
+$(if ifndef GISRC,$(error Must be running in GRASS)
+endef
+
+##############################################################################
+# MASK defines
+##############################################################################
+define MASK
+	@(g.findfile element=cellhd file=MASK || g.copy rast=state@2km,MASK) > /dev/null
+endef
+
+define NOMASK
+	@if ( g.findfile element=cellhd file=MASK > /dev/null); then g.remove MASK &>/dev/null; fi
+endef
+
+#####################################################################
+# Daily Mapset files
+#####################################################################
+tension:=10
+zmult:=1
+smooth:=0.05
+
+v.surf.rst:=v.surf.rst maskmap=state@2km tension=${tension} zmult=${zmult} smooth=${smooth}
+v.in.ogr:=v.in.ogr -e dsn="PG:dbname=${db} host=casil.ucdavis.edu port=5433 user=qjhart"
+
+define ncdc
+
+.PHONY: $1
+$1::${vect}/$1
+
+${vect}/$1:
+	${v.in.ogr} layer=ncdc.station_daily_$1 where="date='${date}'" output=$1 >/dev/null 2>/dev/null
+
+.PHONY: delta
+delta::d$1
+.PHONY: d$1
+d$1:${rast}/d$1
+
+${rast}/d$1: ${vect}/$1
+	${v.surf.rst} input=$1 zcolumn=$1 elev=d$1 >/dev/null 2>/dev/null
+
+endef
+
+define mult-day
+.PHONY: day
+$1::${rast}/$1
+day: ${rast}/$1
+
+${rast}/$1: ${rast}/d$1 ${monthly-rast}/m$1
+	g.region -d; \
+	r.mapcalc '$1=if(d$1<0.0,0.0,d$1)*"m$1@${monthly-mapset}"' >/dev/null 2>/dev/null
+
+endef
+
+define add-day
+.PHONY: day
+$1::${rast}/$1
+day: ${rast}/$1
+
+${rast}/$1: ${rast}/d$1 ${monthly-rast}/m$1
+	g.region -d; \
+	r.mapcalc '$1=d$1+"m$1@${monthly-mapset}"' >/dev/null 2>/dev/null
+
+endef
+
+define daily
+
+.PHONY:TnTxPCPEToRF.csv
+TnTxPCPEToRF.csv:${etc}/TnTxPCPEToRF.csv
+${etc}/TnTxPCPEToRF.csv: ${rast}/Tn ${rast}/Tx ${rast}/PCP ${rast}/ETo ${rast}/RF
+	@[[ -d $$(dir $$@) ]]  || mkdir $$(dir $$@);\
+	g.region rast=state@4km;\
+	r.mask -r input=MASK >/dev/null 2>/dev/null; r.mask input=interior_mask@4km >/dev/null 2>/dev/null;\
+	date=`g.gisenv MAPSET`;\
+	r.stats -1 -n -x Tn,Tx,PCP,ETo,RF 2>/dev/null | sed -e "s/^/$$$$date /" | tr ' ' ',' > $$@;\
+	r.mask -r input=MASK >/dev/null 2>/dev/null;\
+	g.region -d;
+
+.PHONY:sretr
+sretr:${rast}/srha
+${rast}/srha:
+	pi=3.14159265;\
+	julian=`date --date="${MAPSET}" +%j`;\
+	jul_deg="(360*($$$$julian/365.0))";\
+	dr="(1.0+0.033*cos($$$$jul_deg))";\
+	declination="360.0/$$$$pi*0.409*sin($$$$jul_deg-79.64)";\
+	r.mapcalc "srha=acos(-tan(latitude_deg@2km)*tan($$$$declination))"; 
+
+.PHONY:Ra
+Ra:${rast}/Ra
+${rast}/Ra:${rast}/srha
+	pi=3.14159265; Gsc=0.082; \
+	julian=`date --date="${MAPSET}" +%j`;\
+	jul_rad="(360*($$$$julian/365.0))";\
+	dr="(1.0+0.033*cos($$$$jul_rad))";\
+	declination="360.0/$$$$pi*0.409*sin($$$$jul_rad-79.64)";\
+	r.mapcalc "Ra=(24.0*60.0/$$$$pi)*$$$$Gsc*$$$$dr*((srha*$$$$pi/180.0)*sin($$$$declination)*sin(latitude_deg@4km*$$$$pi/180.0)+cos(latitude_deg@4km*$$$$pi/180.0)*cos($$$$declination)*sin(srha))";\
+
+.PHONY:Tm
+Tm:$(rast)/Tm
+$(rast)/Tm: $(rast)/Tx $(rast)/Tn
+	r.mapcalc "Tm=(Tx+Tn)/2";
+
+.PHONY:ETh
+ETh:$(rast)/ETh
+$(rast)/ETh: $(rast)/Tm $(rast)/Tx $(rast)/Tn $(rast)/Ra
+	@r.mapcalc "ETh=if(Tx<Tn,0,0.408*(0.0023*Ra*(Tm+17.8))*(sqrt(Tx-Tn)))" 2>/dev/null;
+
+.PHONY:ETo
+ETo:$(rast)/ETo
+$(rast)/ETo:$(rast)/ETh 
+	@r.mapcalc "ETo=ETh*cfhs@2km" 2>/dev/null;\
+
+#.PHONY:RD
+#RD:$(rast)/RD
+#$(rast)/RD: $(rast)/ETo $(rast)/PCP
+#	r.mapcalc "RD=if(ETo>PCP,0,1)";
+
+.PHONY:RF
+RF:$(rast)/RF
+$(rast)/RF: $(rast)/ETo $(rast)/PCP
+	@r.mapcalc "RF=if(isnull(ETo),if(PCP>0,1,0),if(ETo>PCP,0,1))" >/dev/null 2>/dev/null;
+
+endef
+
+#####################################################################
+# Monthly Mapset files
+#####################################################################
+define prism
+
+.PHONY: prism
+prism::m$1
+.PHONY: m$1
+m$1:${rast}/m$1
+
+${rast}/m$1: ${prism-$1}
+	r.in.arc input=${prism-$1} output=m$1 type=FCELL mult=0.01
+endef
+
+
+
+
+ifdef GISRC
+
+GISDBASE:=$(shell g.gisenv get=GISDBASE)
+LOCATION_NAME:=$(shell g.gisenv get=LOCATION_NAME)
+MAPSET:=$(shell g.gisenv get=MAPSET)
+
+YYYY:=$(word 1,$(subst -, ,${MAPSET}))
+MM:=$(word 2,$(subst -, ,${MAPSET}))
+DD:=$(word 3,$(subst -, ,${MAPSET}))
+
+#$(warning YYYY=${YYYY} MM=${MM} DD=${DD})
+
+date:=${MAPSET}
+
+else 
+
+GISDBASE:=/home/groups/etocimetaw/gdb
+
+endif
+
+# Generic vol.rst parmeters
+WIND3:=$(loc)/$(MAPSET)/WIND3
+DEFAULT_WIND3:=$(loc)/PERMANENT/WIND3
+
+# Shortcut Directories
+gdb:=${GISDBASE}
+loc:=$(GISDBASE)/$(LOCATION_NAME)
+map:=$(GISDBASE)/$(LOCATION_NAME)/${MAPSET}
+rast:=$(loc)/$(MAPSET)/cellhd
+vect:=$(loc)/$(MAPSET)/vector
+etc:=$(loc)/$(MAPSET)/etc
+
+#####################################################################
+# Database input
+#####################################################################
+
+rsync:
+	rsync -a -v --progress --exclude=old qjhart@casil.ucdavis.edu:/home/groups/etosimetaw/data/NCDC/ .
+
+schema:
+	${PG} -f schema.sql
+
+# To do them all
+# echo Dev*.csv | sed -e 's/csv/csv.db/g' | xargs make 2> make.err > make.out &
+%.csv.db:%.csv
+	cat input.sql | sed -e 's|@FILE@|${PWD}/$<|' > $@.s
+	$(PG) -f $@.s
+	mv $@.s $@
+
+#####################################################################
+# MAPSET Making
+#####################################################################
+.PHONY: days years
+
+years:
+	${PG} -t -c "select distinct substr(date,1,4) from ncdc.dates where date::text ~ '$(or ${YYYY},.{4})-.{2}-.{2}'"
+
+days:
+	${PG} -t -c "select date from ncdc.dates where date::text ~ '$(or ${YYYY},.{4})-$(or ${MM},.{2})-$(or ${DD},.{2})'"
+
+#$(warning LOCATION_NAME:=${LOCATION_NAME})
+
+ifeq (${MAPSET},etosimetaw)
+
+mapsets:=$(shell ${PG} -t -q -A -c "select distinct substr(date,1,4) from ncdc.dates" | sed -e 's|^\s*|${map}/|')
+
+${mapsets}:${map}/%:
+	mkdir -p $@
+	# as a location
+	ln -s ../PERMANENT $@
+	ln -s ../2km $@
+	# These are as a mapset
+	cp ${map}/template/WIND $@
+	cp ${map}/template/VAR $@
+
+else # is YEAR
+
+ifeq (${MM},)
+
+mapsets:=$(patsubst %,${map}/${YYYY}-%,01 02 03 04 05 06 07 08 09 10 11 12)
+$(warning ${mapsets})
+
+${mapsets}:${map}/%:
+	mkdir -p $@
+	# as a location
+	ln -s ../PERMANENT $@
+	ln -s ../2km $@
+	# These are as a mapset
+	cp ${map}/../template/WIND $@
+	cp ${map}/../template/VAR $@
+
+else
+
+ifeq (${DD},)
+
+mapsets:=$(shell ${PG} -t -c "select date from ncdc.dates where date::text ~'${YYYY}-${MM}-.{2}'")
+
+mapset-dirs:=$(patsubst %,${loc}/%,${mapsets})
+
+${mapset-dirs}:${loc}/%:
+	mkdir -p $@
+	cp ${loc}/../template/WIND $@
+	cp ${loc}/../template/VAR $@
+
+prism-dir:=/proj/simetaw/data/data/PRISM
+prism-Tn:=${prism-dir}/tmin/us_tmin_${YYYY}.${MM}_teal83_ca.asc
+prism-Tx:=${prism-dir}/tmax/us_tmax_${YYYY}.${MM}_teal83_ca.asc
+prism-PCP:=${prism-dir}/ppt/us_ppt_${YYYY}.${MM}_teal83_ca.asc
+
+$(foreach p,Tx Tn PCP,$(eval $(call prism,$(p))))
+
+.PHONY: NRF
+NRF:$(rast)/NRF
+${rast}/NRF:
+	r.mapcalc 'NRF=$(patsubst %,"RF@%"+,${mapsets})0'
+
+.PHONY:TnTxPCPNRF.csv
+TnTxPCPNRF.csv:${etc}/TnTxPCPNRF.csv
+${etc}/TnTxPCPNRF.csv: ${rast}/mTn ${rast}/mTx ${rast}/mPCP ${rast}/NRF
+	@[[ -d $(dir $@) ]]  || mkdir $(dir $@);\
+	g.region rast=state@4km;\
+	r.mask -r input=MASK >/dev/null 2>/dev/null; r.mask input=interior_mask@4km >/dev/null 2>/dev/null;\
+	date=`g.gisenv MAPSET`;\
+	r.stats -1 -n -x mTn,mTx,mPCP,NRF 2>/dev/null | sed -e "s/^/${MAPSET} /" | tr ' ' ',' > $@;\
+	r.mask -r input=MASK >/dev/null 2>/dev/null;\
+	g.region -d;
+
+else
+
+monthly-mapset:=${YYYY}-${MM}
+monthly-rast:=$(loc)/$(monthly-mapset)/cellhd
+
+$(eval $(call daily))
+$(foreach p,Tx Tn PCP,$(eval $(call ncdc,$(p))))
+$(foreach p,PCP,$(eval $(call mult-day,$(p))))
+$(foreach p,Tx Tn,$(eval $(call add-day,$(p))))
+
+endif #DD
+
+endif #MM
+
+endif # Year or no
+
+.PHONY:mapsets
+mapsets: ${mapsets}
+
+
+#$(WIND3): $(DEFAULT_WIND3)
+#	cp $< $@
+
+#define spline_template
+#$(rast)/$(1)_t$(2)_z$(3)_s$(4): $(site_lists)/$(1) $(WIND3)
+#	s.vol.rst input=$(1) cellinp=Z@2km \
+#	  field=1 maskmap=state@2km \
+#	  tension=$(2) zmult=$(3) smooth=$(4) \
+#	  cellout=$(1)_t$(2)_z$(3)_s$(4) > /dev/null &>/dev/null;
+#endef
+
+#for i in 0 5 10 15 30; do g.remove vect=baz 2>/dev/null >/dev/null ; v.surf.rst -c cvdev=baz input=bar zcolumn=tx maskmap=state@2km tension=$i smooth=0.05 2>/dev/null > /dev/null; echo -n "$i "; v.univar baz column=flt1 type=point | grep mean; done

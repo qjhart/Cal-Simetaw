@@ -1,0 +1,37 @@
+\set ON_ERROR_STOP 1
+BEGIN;
+drop schema if exists "4km_byrow" cascade;
+create schema "4km_byrow";
+set search_path="4km_byrow",public;
+
+create table pixels (
+x integer,
+y integer,
+east integer,
+north integer,
+longitude float,
+latitude float,
+primary key(x,y)
+);
+
+create table prism (
+x integer,
+y integer,
+year integer check (year >0),
+month integer check (month >=1 and month<=12),
+Tn float,
+Tx float,
+PCP float,
+NRD integer check (NRD >= 0),
+unique(x,y,year,month),
+foreign key (x,y) references pixels (x,y)
+);
+
+create index prism_x on prism(x);
+create index prism_y on prism(y);
+create index prism_year on prism(year);
+create index prism_month on prism(month);
+
+
+END;
+

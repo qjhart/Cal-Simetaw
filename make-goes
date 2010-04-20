@@ -1,0 +1,928 @@
+#! /usr/bin/make -f
+SHELL=/bin/bash
+
+# Are we currently Running Grass?
+ifndef GISRC
+  $(error Must be running in GRASS)
+endif
+
+# Some overview Links
+use_dme:=1;	# Comment out to not use Daymet
+
+#bindir:=BINDIR
+bindir:=/home/groups/goes/bin
+#shlibdir:=SHLIBDIR
+shlibdir:=/home/groups/goes/bin
+
+# Where to the htdocs go?
+htdocs:=/home/groups/goes/htdocs/cimis
+
+GISDBASE:=$(shell g.gisenv get=GISDBASE)
+LOCATION_NAME:=$(shell g.gisenv get=LOCATION_NAME)
+MAPSET:=$(shell g.gisenv get=MAPSET)
+
+# Check on whether the MAPSET is a day, month, or otherwise
+
+YYYY:=$(shell echo $(MAPSET) | perl -n -e '/^(20\d{2})(-([01]\d)(-([0123]\d))?)?$$/ and print $$1;')
+MM:=$(shell echo $(MAPSET) | perl -n -e '/^(20\d{2})(-([01]\d)(-([0123]\d))?)?$$/ and print $$3;')
+DD:=$(shell echo $(MAPSET) | perl -n -e '/^(20\d{2})(-([01]\d)(-([0123]\d))?)?$$/ and print $$5;')
+
+###################################################
+# Check for YYYY / MM / DD
+##################################################
+ifndef YYYY
+$(error Don't know about this confusing MAPSET)
+endif
+
+ifndef MM
+$(error Don't know how to handle YYYY mapsets)
+endif
+
+PG_DBASE:=$(shell g.gisenv get=PG_DBASE)
+PG_HOST:=$(shell g.gisenv get=PG_HOST)
+PG_PORT:=$(shell g.gisenv get=PG_PORT)
+
+# PostgreSQL commands
+PSQL=psql -h $(PG_HOST) -d $(PG_DBASE) -p ${PG_PORT}
+
+# Lapse Rates/Tensions/Smooth for dewp and min_at
+T_tension:=10
+T_smooth:=0.03
+d_dewp_lr:=5
+d_min_at_lr:=5
+d_max_at_lr:=5
+
+# Shortcut Directories
+loc:=$(GISDBASE)/$(LOCATION_NAME)
+rast:=$(loc)/$(MAPSET)/cellhd
+site_lists:=$(loc)/$(MAPSET)/site_lists
+# etc is our special location for non-grass datafiles
+etc:=$(loc)/$(MAPSET)/etc
+#daily_dir:=$(MAPSET)
+# New one will be this
+daily_dir:=$(YYYY)/$(MM)/$(DD)
+html:=$(htdocs)/$(daily_dir)
+
+# Generic vol.rst parmeters
+WIND3:=$(loc)/$(MAPSET)/WIND3
+DEFAULT_WIND3:=$(loc)/PERMANENT/WIND3
+tension:=5
+zmult:=30
+smooth:=0.05
+tzs:=t${tension}_z$(zmult)_s$(smooth)
+
+# needed point data from postgres
+sites:=d_ref_eto d_precip d_sr_avg d_avg_vp d_max_at d_min_at \
+	d_avg_at d_max_rh \
+	d_min_rh d_avg_rh d_dewp d_avg_ws d_avg_nr pm_eto_ref
+
+csv:=$(patsubst %,$(etc)/%.csv,$(sites))
+
+visHHMM:=$(shell $(bindir)/g.daylight.intervals --exists --int=60 delim=' ' filename='vis%hh%mm' date=$(MAPSET) sretr=sretr ssetr=ssetr)
+HHMM:=$(subst vis,,$(visHHMM))
+
+# We really don't use intervals -- it's hidden in cimis.k.factor
+#intervals:=$(shell perl -e '@k=qw($(HHMM));for $$n (1 .. $$\#k) {$$d=(substr($$k[$$n-1],0,2)*60+substr($$k[$$n-1],2,4)+substr($$k[$$n],0,2)*60+substr($$k[$$n],2,4))/2; printf "%2.2d%2.2d ",int($$d/60),$$d%60;};')
+
+# All the input rasters
+raster_inputs:= Tn Tx Tdew U2 Rs
+raster_errs:= $(patsubst %,%_err,$(raster_inputs))
+
+.PHONY: info
+info:
+	@echo GISRC: $(GISRC)
+	@g.gisenv;
+	@echo YYYY/MM/DD: $(YYYY)/$(MM)/$(DD)
+	@echo Times =$(HHMM)
+	@echo use_dme=$(use_dme)
+	@echo html files to = $(html)
+
+###############################################
+# Section some additional PHONY args.  They're
+# also interspaced in the file.
+###############################################
+.PHONY: err all
+
+yesterday: sites et0 err mavg_et0 rast-to-postgresql monte-carlo html clean-tmp clean-monte-carlo
+
+err: $(raster_errs)
+
+###############################################################################
+# This section is for calculating html output
+###############################################################################
+.PHONY: current $(htdocs)/current/vis.tif $(htdocs)/current/clouds.tif $(htdocs)/current/cloudsT.tif
+
+current: $(htdocs)/current/vis.tif $(htdocs)/current/clouds.tif $(htdocs)/current/cloudsT.tif
+
+$(htdocs)/current/vis.tif:
+	rm -f $@;
+	cur=`g.mlist type=rast pattern=vis???? | tail -1`;\
+	if [[ -n $$cur ]]; then\
+	  r.out.gdal input=$$cur format=GTiff type=Int16 output=$@ &> /dev/null; \
+	fi; \
+	hhmm=`echo $$cur | sed -e 's/vis\(..\)/\1:/'`; \
+	touch --date="${MAPSET} $$hhmm" $@;
+
+$(htdocs)/current/clouds.tif:
+	rm -f $@;
+	vis=`g.mlist type=rast pattern=vis???? | tail -1`;\
+	if [[ -n $vis ]]; then \
+	  cur=`echo $$vis | sed -e 's/vis/cloud/'`; \
+	  if (g.findfile element=cellhd file=$$cur >/dev/null); then \
+	    r.out.gdal input=$$cur format=GTiff type=Byte output=$@ &> /dev/null; \
+	 fi; \
+	fi; \
+	hhmm=`echo $$cur | sed -e 's/cloud\(..\)/\1:/'`; \
+	touch --date="${MAPSET} $$hhmm" $@;
+
+$(htdocs)/current/cloudsT.tif:
+	rm -f $@;
+	vis=`g.mlist type=rast pattern=vis???? | tail -1`;\
+	if [[ -n $vis ]]; then \
+	  cur=`echo $$vis | sed -e 's/vis/cloud/'`; \
+	  if (g.findfile element=cellhd file=$$cur >/dev/null); then \
+	    g.mapcalc T$${cur}='if($${cur}>64,$${cur},null())' &> /dev/null;\
+	    r.out.gdal input=T$$cur format=GTiff type=Byte output=$@ &> /dev/null; \
+	    g.remove T$${cur} &> /dev/null; \
+	 fi; \
+	fi; \
+	hhmm=`echo $$cur | sed -e 's/cloud\(..\)/\1:/'`; \
+	touch --date="${MAPSET} $$hhmm" $@;
+
+.PHONY: html
+
+# Don't inlcude RHx anymore
+html_layers:= Rso Rs K Rnl Tdew et0 Tx Tn U2 mc_et0_avg mc_et0_err_3
+
+html: README.html $(patsubst %,$(html)/%.png,$(html_layers)) $(patsubst %,$(html)/%.asc.gz,$(html_layers)) $(html)/station_compare.csv $(html)/station_compare_7.csv
+
+$(html):
+	mkdir -p $(html)
+
+.PHONY: README.html
+README.html: $(html)/README.html
+# Direct link no longer used
+$(htdocs)/$(MAPSET): $(html)
+	ln -s $< $@
+
+$(html)/README.html: $(html)
+	@m4 --define='MAPSET=$(MAPSET)' $(htdocs)/template/README.html > $@
+
+clean-html:
+	rm -rf $(html)
+
+define PNG
+.PHONY: $(1).png
+
+$(1).png: $(html)/$(1).png $(html)/$(1).asc.gz
+$(1).asc.gz: $(html)/$(1).asc.gz
+
+$(html)/$(1).asc.gz: $(rast)/$(1)
+	@echo $(1).asc.gz
+	@[[ -d $(html) ]] || mkdir -p $(html)
+	@r.out.arc input=$(1) output=$(html)/$(1).asc &>/dev/null;
+	@gzip -f $(html)/$(1).asc;
+
+$(html)/$(1).png: $(rast)/$(1)
+	@echo $(1).png
+	@[[ -d $(html) ]] || mkdir -p $(html)
+	@. $(shlibdir)/mapping_functions.shlib; \
+	d_png $(html)/$(1).png $(1) '$(2)' '$(3)' '$(4)';
+endef
+
+# Special for report
+$(eval $(call PNG,nd_max_at_lr5_t10_s0.03,,C))
+$(eval $(call PNG,d_max_at_dme,,C))
+$(eval $(call PNG,d_max_at_ns,,C))
+$(eval $(call PNG,d_max_rh_dme,,%))
+$(eval $(call PNG,d_max_rh_$(tzs),,%))
+$(eval $(call PNG,FAO_Rso,CIMIS Radiation,W/m^2))
+#$(eval $(call PNG,vis1200,Visible GOES (1200),count))
+#$(eval $(call PNG,p1200,Albedo GOES (1200),count))
+#$(eval $(call PNG,n1200,Clear Sky (1200),count))
+$(foreach p,00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24,$(eval $(call PNG,vis$(p)00,Visible GOES-$(p)00,count)))
+$(foreach p,00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24,$(eval $(call PNG,p$(p)00,Albedo GOES-$(p)00,count)))
+$(foreach p,00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24,$(eval $(call PNG,k$(p)00,Clear Sky-$(p)00,count)))
+
+$(eval $(call PNG,Tn,Tn, C))
+$(eval $(call PNG,Tx,Tx, C))
+$(eval $(call PNG,Tdew,Tdew, C))
+$(eval $(call PNG,RHx,RHx, C))
+$(eval $(call PNG,U2,Wind Speed, m/s))
+
+$(eval $(call PNG,Rs,Rs View,MJ/m^2 day))
+$(eval $(call PNG,Rso,Clear Sky Radiation,MJ/m^2 day))
+$(eval $(call PNG,K,Clear Sky Parameter, ))
+$(eval $(call PNG,et0,ET0 View, mm))
+$(eval $(call PNG,Rnl,Long wave Radiation, MJ/m^2))
+
+$(eval $(call PNG,mc_et0_avg,ET0 Confidence Avg.,mm))
+$(eval $(call PNG,mc_et0_err_3,ET0 Confidence Std.,mm))
+
+
+
+####################################################################
+# Postgresql Data manipulations
+####################################################################
+create-table:
+	$(PSQL) -c "drop table goes_daily;" || echo "Not There"
+	$(PSQL) -c "create table goes_daily ( st_number int not null, d_date date not NULL, Tn real, Tn_err real, Tx real, Tx_err real,U2 real, U2_err real,ea real ea_err real,Gc real, G real, K real, Rnl real, tl real, et0 real);"
+
+# Remake the station data file
+$(loc)/PERMANENT/site_lists/station:
+	$(PSQL) --no-align --tuples-only -c "select X(st_casil83)||'|'||Y(st_casil83)||'|'||st_elevation*0.3048||'|#'||st_number||' @\"'||st_name||'\" @\"'||st_city||'\" @\"'||st_county||'\" @'||st_start||' @'||coalesce(st_end::text,'ACTIVE') from station order by st_number;" > $@
+
+# Dump data to postgresql
+rast-to-postgresql: $(rast)/Tn $(rast)/Tn_err $(rast)/Tx $(rast)/Tx_err $(rast)/U2 $(rast)/U2_err $(rast)/ea $(rast)/ea_err $(rast)/Gc $(rast)/G $(rast)/K $(rast)/Rnl $(etc)/tl $(rast)/et0 $(rast)/FAO_Rso
+	tl=`cat $(etc)/tl`;\
+	$(PSQL) -c "delete from goes_daily where d_date='$(MAPSET)'"; \
+	$(PSQL) -F' ' -A -t -c "select x(st_casil83),y(st_casil83),st_number||'|$(MAPSET)' from station" | r.what input=Tn,Tn_err,Tx,Tx_err,U2,U2_err,ea,ea_err,Gc,G,K,Rnl,$$tl,et0,FAO_Rso | cut --delimiter="|" --fields='3-'  | $(PSQL) -c "COPY goes_daily from STDIN using delimiters '|' with NULL as '*'"; 
+
+#Make the zipcode directory
+$(etc)/zipcode:
+	mkdir $(etc)/zipcode;
+
+define rast-to-zipcode
+rast-to-zipcode:rast-to-zipcode-$1
+rast-to-zipcode-$1: $(etc)/zipcode/$1.db
+$(etc)/zipcode/$1.db: $(rast)/$1 $(etc)/zipcode
+	$(PSQL) -c "delete from zipcode_daily_parm where d_date='$(MAPSET)' and phenomenon='$1'";
+	g.region rast=zipcode@500m;
+	r.stats -1 zipcode@500m,$1 | perl -n -a -e '$$$$zip{$$$$F[0]}+=$$$$F[1]; $$$$cnt{$$$$F[0]}++;' -e 'END {foreach (sort keys %zip) { print(join(",","$(MAPSET)","$1",$$$$_,$$$$zip{$$$$_}/$$$$cnt{$$$$_}),"\n") unless $$$$_ eq "\*";}}' | $(PSQL) -c "COPY zipcode_daily_parm (d_date,phenomenon,zipcode,result) from STDIN WITH CSV"
+	g.region -d;
+	touch $$@
+endef
+# Now add these all in
+$(foreach r,Tn Tx U2 ea Gc G K Rnl et0 FAO_Rso,$(eval $(call rast-to-zipcode,$(r))))
+
+#Newer zipcode
+.PHONY:zipcode
+zipcode: $(etc)/zipcode.db
+$(etc)/zipcode.db: $(rast)/Tn $(rast)/Tn_err $(rast)/Tx $(rast)/Tx_err $(rast)/U2 $(rast)/U2_err $(rast)/ea $(rast)/ea_err $(rast)/Gc $(rast)/G $(rast)/K $(rast)/Rnl $(etc)/tl $(rast)/et0 $(rast)/FAO_Rso
+	$(PSQL) -c "delete from zipcode_daily where d_date='$(MAPSET)'";
+	cimis.daily.zipcode.summary --nocount rast=Tn,Tx,U2,ea,Gc,G,K,Rnl,et0,FAO_Rso | $(PSQL) -c "COPY zipcode_daily (d_date,zipcode,Tn,Tx,U2,ea,Gc,G,K,Rnl,et0,FAO_Rso) from STDIN WITH CSV HEADER"
+	g.region -d;
+	touch $@;
+
+.PHONY: zipcode.csv
+zipcode.csv: $(html) $(html)/zipcode.csv
+$(html)/zipcode.csv: $(etc)/zipcode.db
+	@echo $@;
+	select='zipcode,d_date,Tn::numeric(4,2),Tx::numeric(4,2),U2::numeric(4,2),ea::numeric(4,2),(g/24)::numeric(6,2) as goes_sr_avg,(Rnl/0.0036/24)::numeric(6,2) as goes_rlw,et0::numeric(4,1) as et0'; \
+	$(PSQL) -P fieldsep="," -A -c "select $$select from zipcode_daily where d_date='$(MAPSET)'" > $@
+
+# Station data comparison
+.PHONY:station_compare clean-station_compare
+
+station_compare: $(html)/station_compare.csv $(html)/station_compare_7.csv
+clean-station_compare: 
+	rm -f $(html)/station_compare.csv $(html)/station_compare_7.csv
+
+$(html)/station_compare.csv: 
+	@echo $@;
+	@select='c.st_number,c.d_date,g.Tn::numeric(4,2),g.Tn_err::numeric(4,2),g.Tx::numeric(4,2),Tx_err::numeric(4,2),U2::numeric(4,2),U2_err::numeric(4,2),ea::numeric(4,2),ea_err::numeric(4,2),(g.g/24)::numeric(6,2) as goes_sr_avg,(-g.Rnl/0.0036/24)::numeric(6,2) as goes_rlw,g.et0::numeric(4,1) as et0,d_min_at,d_min_at_qc,d_max_at,d_max_at_qc,d_avg_ws,d_avg_ws_qc,d_sr_avg,d_sr_avg_qc,c.d_avg_nr,-(c.d_avg_nr-d_sr_avg*(1-0.23))::numeric(6,2) as d_est_Rnl,d_ref_eto'; \
+	$(PSQL) -P fieldsep="," -A -c "select $$select from (daily c JOIN goes_daily g ON (((c.st_number = g.st_number) AND (c.d_date = g.d_date)))) where g.d_date='$(MAPSET)'" >> $@
+
+$(html)/station_compare_7.csv:
+	@echo $@;
+	@$(PSQL) -P fieldsep="," -A -c "select c.st_number,count(*) as number_days,min(c.d_date) as start_date,max(c.d_date) as end_date,avg(g.Tn)::numeric(4,2) as Tn,avg(g.Tn_err)::numeric(4,2) as Tn_err,avg(g.Tx)::numeric(4,2) as Tx,avg(Tx_err)::numeric(4,2) as Tx_err,avg(U2)::numeric(4,2) as U2,avg(U2_err)::numeric(4,2) as U2_err,avg(ea)::numeric(4,2) as ea,avg(ea_err)::numeric(4,2) as ea_err,(avg(g.g)/24)::numeric(6,2) as goes_sr_avg,(-avg(g.Rnl)/0.0036/24)::numeric(6,2) as goes_rlw,avg(g.et0)::numeric(4,1) as et0,avg(d_min_at)::numeric(4,2) as d_min_at,avg(d_max_at)::numeric(4,2) as d_max_at,avg(d_avg_ws)::numeric(4,2) as d_avg_ws,avg(d_sr_avg)::numeric(6,2) as d_sr_avg,avg(c.d_avg_nr)::numeric(6,2) as d_avg_nr,(-avg(c.d_avg_nr-d_sr_avg)*(1-0.23))::numeric(6,2) as d_est_Rnl,avg(d_ref_eto)::numeric(4,2) as d_ref_eto from (daily c JOIN goes_daily g ON (((c.st_number = g.st_number) AND (c.d_date = g.d_date)))) where d_min_at_qc is null and d_max_at_qc is null and d_avg_ws_qc is null and d_sr_avg_qc is null and  date '$(MAPSET)'-g.d_date <= 7 group by c.st_number;" > $@
+
+
+########################################################################
+# Site Files are created from downloading the needed data
+# From CIMIS, updating the db, and copying the CSV to the grass sites.
+############################################################################### default site making rules
+
+define mapset_site
+.PHONY: $(1)
+
+$(etc)/$(1).csv:
+	@echo -e -n "$(1)\tcimis-download($2)"
+	@[[ -d $(etc) ]] || mkdir $(etc)
+	@$(bindir)/cimis-download --user=qjhart --pass=connal --date=$(MAPSET) --sensor=$(2) --output=$(etc)/$(1).csv &>/dev/null
+
+$(1):$(site_lists)/$(1)
+
+$(site_lists)/$(1): $(etc)/$(1).csv
+	@echo -n "/db-import"
+	@$(bindir)/db-import --daily=$(etc)/$(1).csv --sensor=$(1)
+
+#	@$(bindir)/db-import --daily=$(etc)/$(1).csv --sensor=$(1) >& /dev/null
+	@echo -n "/cimis.csv.to.sites"
+	@$(bindir)/cimis.csv.to.sites --station=station@PERMANENT --csv=$(etc)/$(1).csv --sites=$(1) >& /dev/null
+	@echo "/"
+endef
+
+$(eval $(call mapset_site,d_sr_avg,DAY_SOL_RAD_AVG)) # 1-Solar Radiation Average
+$(eval $(call mapset_site,d_avg_nr,DAY_SOL_RAD_NET)) # 2-Net Radiation Average
+$(eval $(call mapset_site,DAY_SOIL_TMP_MAX,DAY_SOIL_TMP_MAX)) # 3-Maximum Soil Temperature 15 cm
+$(eval $(call mapset_site,DAY_SOIL_TMP_MIN,DAY_SOIL_TMP_MIN)) # 4-Minimum Soil Temperature 15 cm
+$(eval $(call mapset_site,DAY_SOIL_TMP_AVG,DAY_SOIL_TMP_AVG)) # 5-Average Soil Temperature 15 cm
+$(eval $(call mapset_site,d_max_at,DAY_AIR_TMP_MAX)) # 6-Maximum Air Temperature
+$(eval $(call mapset_site,d_min_at,DAY_AIR_TMP_MIN)) # 7-Minimum Air Temperature
+$(eval $(call mapset_site,d_avg_at,DAY_AIR_TMP_AVG)) # 8-Average Air Temperature
+$(eval $(call mapset_site,DAY_VAP_PRES_MAX,DAY_VAP_PRES_MAX)) # 9-Maximum Vapor Pressure
+$(eval $(call mapset_site,DAY_VAP_PRES_MIN,DAY_VAP_PRES_MIN)) # 10-Minimum Vapor Pressure
+$(eval $(call mapset_site,d_avg_vp,DAY_VAP_PRES_AVG)) # 11-Average Vapor Pressure
+$(eval $(call mapset_site,DAY_WIND_CUBED,DAY_WIND_CUBED)) # 12-Wind Cubed
+$(eval $(call mapset_site,wind_run,DAY_WIND_RUN)) # 13-Wind Run
+$(eval $(call mapset_site,d_avg_ws,DAY_WIND_SPEED_AVG)) # 14-Average Wind Speed
+$(eval $(call mapset_site,DAY_NNE,DAY_NNE)) # 15-Wind Rose: NNE
+$(eval $(call mapset_site,DAY_ENE,DAY_ENE)) # 16-Wind Rose: ENE
+$(eval $(call mapset_site,DAY_ESE,DAY_ESE)) # 17-Wind Rose: ESE
+$(eval $(call mapset_site,DAY_SSE,DAY_SSE)) # 18-Wind Rose: SSE
+$(eval $(call mapset_site,DAY_SSW,DAY_SSW)) # 19-Wind Rose: SSW
+$(eval $(call mapset_site,DAY_WSW,DAY_WSW)) # 20-Wind Rose: WSW
+$(eval $(call mapset_site,DAY_WNW,DAY_WNW)) # 21-Wind Rose: WNW
+$(eval $(call mapset_site,DAY_NNW,DAY_NNW)) # 22-Wind Rose: NNW
+$(eval $(call mapset_site,d_precip,DAY_PRECIP)) # 23-Precipitation
+$(eval $(call mapset_site,DAY_TIM_MIN_AIR_TMP,DAY_TIM_MIN_AIR_TMP)) # 24-Time of Minimum Air Temp.
+$(eval $(call mapset_site,DAY_TIM_MAX_AIR_TMP,DAY_TIM_MAX_AIR_TMP)) # 5-Time of Maximum Air Temp.
+$(eval $(call mapset_site,DAY_EPAN,DAY_EPAN)) # 6-Sample E-Pan
+$(eval $(call mapset_site,d_max_rh,DAY_REL_HUM_MAX)) # 27-Maximum Relative Humidity
+$(eval $(call mapset_site,d_min_rh,DAY_REL_HUM_MIN)) # 28-Minimum Relative Humidity
+$(eval $(call mapset_site,d_ref_eto,DAY_ETO_REF)) # 29-Reference ETo
+$(eval $(call mapset_site,pm_eto_ref,DAY_PM_ETO_REF)) # 30-Penman-Monteith ETo
+$(eval $(call mapset_site,DAY_PM_ETR_REF,DAY_PM_ETR_REF)) # 31-Penman-Monteith ETr
+$(eval $(call mapset_site,DAY_BATRY_VOLT,DAY_BATRY_VOLT)) # 32-Battery Voltage
+$(eval $(call mapset_site,d_avg_rh,DAY_REL_HUM_AVG)) # 33-Average Relative Humidity
+$(eval $(call mapset_site,d_dewp,DAY_DEW_POINT)) # 34-Dew Point
+$(eval $(call mapset_site,DAY_WIND_RUN,DAY_WIND_RUN)) # 35-Wind Run
+$(eval $(call mapset_site,DAY_EXP_VALUE_1,DAY_EXP_VALUE_1)) # 36-Experimental 1
+$(eval $(call mapset_site,DAY_EXP_VALUE_2,DAY_EXP_VALUE_2)) # 37-Experimental 2
+
+.PHONY: sites csv
+sites: $(sites)
+csv: $(csv)
+
+#########################################################################
+# Define some Shorthand notations, so we can call rasters (and some
+# sites) by their name
+#########################################################################
+# SHORTHAND Notations
+
+define grass_shorthand_names
+
+.PHONY: $(1)
+
+$(1): $(rast)/$(1)
+
+endef
+
+$(foreach p,MASK U2 Tn Tx Tdew RHx ea Rnl FAO_Rso es sretr ssetr ssha K Dk Bk Rso Rs et0 etoRad et0Aero,$(eval $(call grass_shorthand_names,$(p))))
+
+
+##############################################################################
+# MASK defines
+##############################################################################
+define MASK
+	@(g.findfile element=cellhd file=MASK || g.copy rast=state@2km,MASK) > /dev/null
+endef
+
+define NOMASK
+	@if ( g.findfile element=cellhd file=MASK > /dev/null); then g.remove MASK &>/dev/null; fi
+endef
+
+
+##############################################################################
+# Copy Linke Turbidity from Mapset heliosat
+##############################################################################
+.PHONY: tl
+tl:$(etc)/tl
+$(etc)/tl:
+	@[[ -d $(etc) ]] || mkdir $(etc)
+	@tl=$$(perl -MDate::Manip -e '$$date=ParseDate("$(MAPSET)");' \
+	  -e 'while ($$day=UnixDate($$date,"%d") and $$day != 7 and $$day != 15 and $$day != 21) \
+	      { $$date = DateCalc($$date,"-1 day");}' \
+	  -e 'printf "%s\n",UnixDate($$date,"tl_%m-%d\@heliosat");'); \
+	echo $$tl > $@
+	@echo etc/tl
+
+##############################################################################
+# Calculation of Albedo.  We need:
+# k=1 cloud value (max brightness on 9x9)
+# albedo for each hour
+##############################################################################
+
+cloud-cover::
+
+define r.cloud_cover
+
+cloud-cover:: $(rast)/cloud$(1)
+$(eval $(call grass_shorthand_names,n$(1)))
+$(eval $(call grass_shorthand_names,p$(1)))
+$(eval $(call grass_shorthand_names,k$(1)))
+$(eval $(call grass_shorthand_names,cloud$(1)))
+
+$(rast)/vis$(1)_9:$(rast)/vis$(1)
+	$(call MASK)
+	@r.lowpass size=9 input=vis$(1) output=vis$(1)_9 &> /dev/null
+
+# We should look at replacing this with a simpler method (like top 2%)
+$(etc)/max/vis$(1): $(rast)/vis$(1)_9
+	@[[ -d $(etc)/max ]] || mkdir -p $(etc)/max
+	@max=$$$$(for p in `$(bindir)/cimis.previous.mapsets --days=14 rast=vis$(1)_9 --delim=' '`; do \
+	  r.info -r $$$$p | sed -n -e 's/max=// p'; \
+	done | sort -n | tail -1); \
+	echo $$$$max > $$@
+
+$(rast)/p$(1): $(rast)/vis$(1)
+	@maps=`cimis.previous.mapsets --quote --delim=',' rast=vis$(1)`; \
+	r.mapcalc "p$(1)=min($$$$maps)" &> /dev/null
+
+$(rast)/cloud$(1): $(rast)/p$(1) $(etc)/max/vis$(1)
+	$(call NOMASK)
+	@max=`cat $(etc)/max/vis$(1)`; \
+	r.mapcalc "cloud$(1)=int(if(isnull(p$(1)),if(vis$(1)>$$$$max,1,vis$(1)/$$$$max),if(vis$(1)>$$$$max,1,(vis$(1)-p$(1))/($$$$max-p$(1))))*255)" &> /dev/null
+
+$(rast)/n$(1): $(rast)/p$(1) $(etc)/max/vis$(1)
+	$(call NOMASK) 
+	@max=`cat $(etc)/max/vis$(1)`; \
+	r.mapcalc "n$(1)=if($$$$max>p$(1),($$$$max-vis$(1))/($$$$max-p$(1)),1.2)" &> /dev/null
+
+$(rast)/k$(1): $(rast)/n$(1)
+	$(call NOMASK)
+	@r.mapcalc 'k$(1)=if((n$(1)>1.2),1.2,if((n$(1)>0.2),n$(1),(if((n$(1)>-0.1),(5.0/3.0)*n$(1)*n$(1)+(1.0/3.0)*n$(1)+(1.0/15.0),0.05))))' &> /dev/null
+
+endef
+$(foreach h,$(HHMM),$(eval $(call r.cloud_cover,$(h))))
+
+# Sunrise/Sunset parameters are taken from r.solpos
+$(rast)/sretr $(rast)/ssetr $(rast)/ssha:
+	r.solpos date=$(MAPSET) sretr=sretr ssetr=ssetr ssha=ssha
+
+$(rast)/U2: $(rast)/d_avg_ws_$(tzs)
+	g.copy -o rast=$(notdir $<),$(notdir $@) &> /dev/null
+	@r.colors map=$(notdir $@) rast=U2@default_colors &>/dev/null
+
+
+# _dme rules for T and rh
+define daymet
+.PHONY: $(1)_dme
+
+$(1)_dme: $(rast)/$(1)_dme
+
+$(rast)/$(1)_dme: $(site_lists)/$(1)
+	s.daymet input=$(1) output=$(1)_dme &>/dev/null
+endef
+$(foreach p,d_min_at d_max_at d_max_rh d_dewp,$(eval $(call daymet,$(p))))
+
+# Currently all Temperature estimations (Tn,Tx,Tdew)
+# use an average of the lapse rate (?_ns) and daymet (?_dme) interpolations.
+# The current implementation uses a different _dme suffix
+ifdef use_dme
+
+define avg_T
+
+.PHONY: $(1) $(1)_err
+$(1): $(rast)/$(1)
+$(1)_err: $(rast)/$(1)_err
+
+$(rast)/$(1): $(rast)/d_$(2)_dme $(rast)/d_$(2)_ns
+	r.mapcalc ' $(1)=(d_$(2)_dme+d_$(2)_ns)/2 ' &> /dev/null
+	@r.colors map=$(1) rast=at@default_colors >/dev/null
+
+$(rast)/$(1)_err: $(rast)/$(1) $(rast)/d_$(2)_ns
+	r.mapcalc '$(1)_err=sqrt(2)*abs($(1)-d_$(2)_ns)' &> /dev/null
+endef
+
+$(rast)/RHx: $(rast)/d_max_rh_dme $(rast)/d_max_rh_$(tzs)
+	r.mapcalc 'RHx=(d_max_rh_dme+d_max_rh_$(tzs))/2' &> /dev/null
+	@r.colors map=RHx rast=rh@default_colors > /dev/null
+
+$(rast)/RHx_err: $(rast)/RHx $(rast)/d_max_rh_dme
+	r.mapcalc 'RHx_err=sqrt(2)*abs(RHx-d_max_rh_dme)' &> /dev/null
+
+else
+define avg_T
+
+$(rast)/$(1): $(rast)/d_$(2)_ns
+	r.mapcalc '$(1)=d_$(2)_ns' &> /dev/null
+	@r.colors map=$(1) rast=at@default_colors >/dev/null
+endef
+
+$(rast)/RHx: $(rast)/d_max_rh_$(tzs)
+	r.mapcalc 'RHx=d_max_rh_$(tzs)' &> /dev/null
+	@r.colors map=RHx rast=rh@default_colors > /dev/null
+
+endif
+$(eval $(call avg_T,Tn,min_at))
+$(eval $(call avg_T,Tx,max_at))
+$(eval $(call avg_T,Tdew,dewp))
+
+$(rast)/Tm: $(rast)/Tx $(rast)/Tn
+	r.mapcalc 'Tm=(Tx+Tn)/2.0' &>/dev/null;
+
+###########################################################################
+# es is calculated from min/max at
+# ea is calculated two ways,
+# - from extrapolated dewpt
+# - from Tn * extrapolated RHx.
+# Depending on settings, we either use the dewpt or no method.
+# Which is set with use_rh_for_ea
+###########################################################################
+$(rast)/es: $(rast)/Tx $(rast)/Tn
+	r.mapcalc '$(notdir $@)=0.6108 / 2 * (exp(Tn * 17.27/ (Tn + 237.3))+ exp(Tx * 17.27/ (Tx + 237.3)))' &> /dev/null;
+
+#use_rh_for_ea:=0  # Comment out to use only dewpt as estimator for ea
+
+ifdef use_rh_for_ea
+
+$(rast)/ea_rh: $(rast)/RHx $(rast)/Tn
+	r.mapcalc 'ea_rh=0.6108*(exp(Tn * 17.27/ (Tn + 237.3))*RHx/100)' &> /dev/null; 
+
+$(rast)/ea_Tdew: $(rast)/Tdew
+	r.mapcalc '$(notdir $@)=0.6108*exp($(notdir $<)*17.27/(($(notdir $<)+237.3)))' &> /dev/null;
+
+$(rast)/ea: $(rast)/ea_Tdew $(rast)/ea_rh
+	r.mapcalc 'ea=(ea_Tdew+ea_rh)/2' &> /dev/null
+
+$(rast)/ea_err: $(rast)/ea
+	r.mapcalc 'ea_err=sqrt(2)*abs(ea-ea_Tdew)' &> /dev/null
+
+else
+# These methods only use dew point Temperature in Calculations
+$(rast)/ea_dewp_dme: $(rast)/d_dewp_dme
+	r.mapcalc '$(notdir $@)=0.6108*exp(($(notdir $<)*17.27/(($(notdir $<)+237.30))))' &> /dev/null; 
+
+$(rast)/ea_dewp_ns: $(rast)/d_dewp_ns
+	r.mapcalc '$(notdir $@)=0.6108*exp(($(notdir $<)*17.27/(($(notdir $<)+237.30))))' &> /dev/null;
+
+$(rast)/ea: $(rast)/ea_dewp_dme $(rast)/ea_dewp_ns
+	r.mapcalc 'ea=(ea_dewp_dme+ea_dewp_ns)/2' &> /dev/null
+
+$(rast)/ea_err: $(rast)/ea
+	r.mapcalc '$(notdir $@)=sqrt(2)*abs(ea-ea_dewp_ns) ' &> /dev/null
+
+endif
+
+############################################################################
+# Calculations of the CIMIS data, are still handled outside this file
+# I will think about inserting them into this setup.
+# This includes K,Dk,Bk,Trb,Trd
+############################################################################
+clear-sky-insolation: $(rast)/Bc $(rast)/Dc $(rast)/Gc $(rast)/Trd $(rast)/Trd $(rast)/FAO_Rso $(rast)/Rs $(rast)/Rso
+clean-clear-sky-insolation: clean-tmp
+	g.remove rast=K,Bc,Dc,Gc,Trb,Trd,FAO_Rso &> /dev/null
+
+# Wh/m^2 day -> MJ/m^2 day
+$(rast)/Rso: $(rast)/Gc
+	r.mapcalc "Rso=(Gc*0.0036)" &> /dev/null; 
+	@r.colors map=Rso rast=Rso@default_colors > /dev/null
+
+$(rast)/Rs: $(rast)/G
+	r.mapcalc "Rs=(G*0.0036)" &> /dev/null; 
+	@r.colors map=Rs rast=Rso@default_colors > /dev/null
+
+
+########################################################################
+# This is the CIMIS method of calculating the Extraterrestrial Radiation
+#############################################################################
+.PHONY: FAO_Rso
+FAO_Rso: $(rast)/FAO_Rso
+
+$(rast)/FAO_Rso: $(rast)/ssha
+	$(call MASK)
+	eval `r.solpos -r date=$(MAPSET)`; \
+	r.mapcalc "FAO_Rso=(0.0036)*(0.75+0.00002*'Z@2km')*$$etrn*24/3.14159*\
+	((ssha*3.14159/180)*sin(latitude_deg@2km)*sin($$declin)\
+	+cos(latitude_deg@2km)*cos($$declin)*sin(ssha))" &> /dev/null
+	@r.colors map=$(notdir $<) rast=Rso@default_colors > /dev/null
+
+########################################################################
+# Heliosat method for Radiation
+########################################################################
+kXXXX:=$(patsubst %,k%,$(HHMM))
+
+$(rast)/Bk $(rast)/Dk $(rast)/K $(rast)/G: $(rast)/ssha $(patsubst %,$(rast)/%,$(kXXXX)) $(etc)/tl $(rast)/Bc $(rast)/Dc $(rast)/Gc
+	tl=`cat $(etc)/tl`;\
+	cimis.daily.k ssha=ssha k="$(kXXXX)" tl=$$tl Bc=Bc Dc=Dc Gc=Gc &>/dev/null
+	@r.colors map=K rast=K@default_colors > /dev/null
+
+$(rast)/Bc $(rast)/Dc $(rast)/Gc $(rast)/Trb $(rast)/Trd: $(etc)/tl $(rast)/ssha
+	@g.remove rast=Bc,Dc,Gc,Trb,Trd > /dev/null
+	tl=`cat $(etc)/tl`; \
+	r.heliosat --prefix='_' --noinstant --date=$(MAPSET) elevin=Z@2km linkein=$$tl lat=latitude_deg@2km ssha=ssha Bc=Bc Dc=Dc Gc=Gc Trb=Trb Trd=Trd &> /dev/null
+	@r.colors map=Gc rast=G@default_colors >/dev/null
+	@r.colors map=Bc rast=G@default_colors >/dev/null
+	@r.colors map=Dc rast=G@default_colors >/dev/null
+
+
+$(rast)/Rnl: $(rast)/Tx $(rast)/Tn $(rast)/ea $(rast)/K
+	r.mapcalc 'Rnl=-(1.35*K-0.35)*(0.34-0.14*sqrt(ea))*4.9e-9*(((Tx+273.16)^4+(Tn+273.16)^4)/2)' &> /dev/null
+
+
+# Shortwave Radiation has been measured to have about 15% error.  Though this
+# is just an estimate.  Less likely is the 15% estimate on Long wave radiation
+
+define r.percent.err
+.PHONY: $(1)_err
+
+$(1)_err: $(rast)/$(1)_err
+
+$(rast)/$(1)_err: $(rast)/$(1)
+	$(call MASK)
+	r.mapcalc '$(1)_err=abs($(2)*$(1))' &> /dev/null
+	@r.colors map=$(1)_err rast=$(1)@default_colors > /dev/null
+endef
+$(foreach p,Rs Rnl,$(eval $(call r.percent.err,$(p),0.15)))
+$(foreach p,U2,$(eval $(call r.percent.err,$(p),0.25)))
+
+#######################################################################
+# Finally make the et0 calculation
+#######################################################################
+
+$(rast)/et0: $(rast)/Rs $(rast)/Rnl $(rast)/ea $(rast)/Tx $(rast)/Tn $(rast)/U2 $(rast)/Tm $(rast)/es
+	DEL="(4098.17*0.6108*(exp(Tm*17.27/(Tm+237.3)))/(Tm+237.3)^2)"; \
+	GAM="psychrometric_constant@2km"; \
+	r.mapcalc et0="(900.0*$$GAM/(Tm+273)*U2*(es-ea)+0.408*$$DEL*(Rs*(1.0-0.23)+Rnl))/($$DEL+$$GAM*(1.0+0.34*U2))" &>/dev/null;
+	@r.colors map=$(notdir $@) rast=$(notdir $@)@default_colors > /dev/null
+
+#######################################################################
+# This section will automatically make the 28 day averages of the files
+#
+#######################################################################
+define r.monthly.average
+.PHONY: mavg_$(1)
+
+mavg_$(1): $(rast)/mavg_$(1)
+
+$(rast)/mavg_$(1): $(rast)/$(1)
+	$(call MASK)
+	count=`cimis.previous.mapsets --days=28 rast=$(1) --count`;\
+	files=`cimis.previous.mapsets --days=28 rast=$(1) --delim='+' --quote`;\
+	r.mapcalc mavg_$(1)="($$$$files)/$$$$count" &> /dev/null;
+	clr=`echo $(1) | sed -e 's/_err//'`; \
+	r.colors map=mavg_$(1) rast=$$$$clr@default_colors >/dev/null
+endef
+$(foreach p,et0 err $(raster_inputs) $(raster_errs),$(eval $(call r.monthly.average,$(p))))
+
+
+#####################################################################
+#  This section will calculate more monthly averages to do sensitivity
+#####################################################################
+.PHONY: sensitivity clean-sensitivity
+
+template.fac:=$(loc)/PERMANENT/etc/template.fac
+
+sen_rasts:=$(patsubst %,mavg_%,$(raster_inputs)) $(patsubst %,mavg_%,$(raster_errs))
+
+sensitivity: $(sen_rasts) $(etc)/6.fac $(etc)/154.fac $(etc)/97.fac $(etc)/15.fac $(etc)/108.fac $(etc)/90.fac $(etc)/35.fac
+
+# @F=(undef,undef,undef,Tn,Tx,Tdew,U2,G,Tn_err,Tx_err,Tdew_err,U2_err,G_err,K,psychrometric_constant@2km)
+$(etc)/%.fac:
+	rasters=`echo $(sen_rasts) | tr ' ' ','`; \
+	s.out.ascii -a -i -d fs=space sites=station | grep ' #$* ' | sed -e 's/ #.*//'  | r.what input=$$rasters,K,psychrometric_constant@2km | perl -n -F'/\|/' -a -e 'chomp $$F[14]; system "m4","-DTn_val=$$F[3]","-DTx_val=$$F[4]","-DTdew_val=$$F[5]","-DU2_val=$$F[6]","-DG_val=$$F[7]","-DTn_err=$$F[8]","-DTx_err=$$F[9]","-DTdew_err=$$F[10]","-DU2_err=$$F[11]","-DG_err=$$F[12]","-DK_val=$$F[13]","-DGAM_val=$$F[14]","$(template.fac)";' > $@
+
+
+# Dump data to etc
+$(etc)/sensitivity: 
+	rasters=`echo $(raster_inputs) $(raster_errs)` | tr ' ' ','; \
+	$(PSQL) -c "delete from sensitivity where d_date='$(MAPSET)'"; \
+	$(PSQL) -F' ' -A -t -c "select x(st_casil83),y(st_casil83),st_number||'|$(MAPSET)' from station" | r.what input=$$rasters | cut --delimiter="|" --fields='3-'  | $(PSQL) -c "COPY goes_daily from STDIN using delimiters '|' with NULL as '*'";\
+
+clean-sensitivity:
+	g.remove rast=`echo $(sen_rasts) | tr ' ' ','` > /dev/null
+
+
+#####################################################################
+# These rules build termperture lapse-rate normalized, rasters
+# Using 2-d splines to fit the normalized data
+# 
+# The output is a raster $(name)_ns to indicate normalized splines
+# intermediate files include: normalized site_list,normalized_spline
+#####################################################################
+define normalized_T
+.PHONY: $(1)_ns
+
+n$(1): $(site_lists)/n$(1)_lr$(2)
+
+$(1)_ns: $(rast)/$(1)_ns
+
+# Normalized Site_Lists
+$(site_lists)/n$(1)_lr$(2): $(site_lists)/$(1)
+	perl -p -F'\|' -a -e '$$$$lapse=$(2);' \
+	  -e '/\%(\-?[\d.]+)/ and $$$$t=sprintf("%.2f",$$$$1+$$$$lapse*$$$$F[2]/1000);' \
+	  -e 's/\%\-?[\d.]+/\%$$$$t/;' $$<  > $$@
+
+# Normalized Spline for Lapse Rate Calculation
+$(rast)/n$(1)_lr$(2)_t$(3)_s$(4): $(site_lists)/n$(1)_lr$(2)
+	$(call MASK)
+	s.surf.rst input=n$(1)_lr$(2) \
+	  field=1 maskmap=MASK \
+	  tension=$(3) smooth=$(4) \
+	  elev=n$(1)_lr$(2)_t$(3)_s$(4) > /dev/null &>/dev/null;
+
+# ReUnNormalized back to Elevation
+$(rast)/$(1)_ns: $(rast)/n$(1)_lr$(2)_t$(3)_s$(4)
+	r.mapcalc $(1)_ns=n$(1)_lr$(2)_t$(3)_s$(4)-$(2)*Z@2km/1000 &> /dev/null
+
+endef
+
+$(foreach p,d_dewp,$(eval $(call normalized_T,$(p),$(d_dewp_lr),$(T_tension),$(T_smooth))))
+$(foreach p,d_min_at,$(eval $(call normalized_T,$(p),$(d_min_at_lr),$(T_tension),$(T_smooth))))
+$(foreach p,d_max_at,$(eval $(call normalized_T,$(p),$(d_max_at_lr),$(T_tension),$(T_smooth))))
+
+
+###############################################################
+#
+# Generic/Simple s.vol.rst interpolations
+# These are used to calculate 
+# d_max_rh and d_avg_ws
+# These show the input parameters in the name so that we can keep
+# a few around.  Mostly, they're used in combination of other rasters anyways
+###############################################################
+$(WIND3): $(DEFAULT_WIND3)
+	cp $< $@
+
+define spline_template
+$(rast)/$(1)_t$(2)_z$(3)_s$(4): $(site_lists)/$(1) $(WIND3)
+	s.vol.rst input=$(1) cellinp=Z@2km \
+	  field=1 maskmap=state@2km \
+	  tension=$(2) zmult=$(3) smooth=$(4) \
+	  cellout=$(1)_t$(2)_z$(3)_s$(4) > /dev/null &>/dev/null;
+endef
+
+$(foreach p,d_max_rh d_avg_ws,$(eval $(call spline_template,$(p),$(tension),$(zmult),$(smooth))))
+
+##################################################################
+# Special Methods for Montecarlo simulations
+##################################################################
+.PHONY: monte-carlo clean-monte-carlo
+count:=0 1 2 3 4 5 6 7 8 9 
+mc_et0s:= $(patsubst %,mc_et0_%,${count})
+mc_tmps:= $(patsubst %,$(rast)/mc_Tn_%,${count}) \
+          $(patsubst %,$(rast)/mc_Tx_%,${count}) \
+          $(patsubst %,$(rast)/mc_ea_%,${count}) \
+          $(patsubst %,$(rast)/mc_U2_%,${count}) \
+          $(patsubst %,$(rast)/mc_Rs_%,${count}) \
+          $(patsubst %,$(rast)/mc_Rnl_%,${count}) \
+          $(patsubst %,$(rast)/mc_es_%,${count}) \
+          $(patsubst %,$(rast)/mc_Tm_%,${count}) \
+	  $(patsubst %,$(rast)/%,${mc_et0s})
+
+clean-monte-carlo:
+	g.remove rast=`echo $(notdir ${mc_tmps}) | tr ' ' ','` > /dev/null
+	g.remove rast=mc_et0_sum2,mc_et0_sum > /dev/null
+
+monte-carlo: ${mc_tmps} $(rast)/mc_et0_sum $(rast)/mc_et0_sum2 $(rast)/mc_et0_avg $(rast)/mc_et0_err $(rast)/mc_et0_err_3
+
+define mc_err_template
+$(rast)/mc_$(1)_%: $(rast)/$(1) $(rast)/$(1)_err
+	@echo -n $(1)_$$*/
+	if (g.findfile file=mc_random element=cellhd >/dev/null); then \
+	  g.remove rast=mc_random >/dev/null;\
+	fi;
+	r.surf.gauss out=mc_random mean=0 sigma=1;
+	r.mapcalc 'mc_$(1)_$$*=$(1)+(mc_random*$(1)_err)';
+	g.remove rast=mc_random;
+endef
+
+$(foreach p,Tx Tn ea Rs Rnl U2 ,$(eval $(call mc_err_template,$(p))))
+
+# Make mc_Tm and mc_es these from original errors.
+$(rast)/mc_Tm_%: $(rast)/mc_Tx_% $(rast)/mc_Tn_%
+	@echo -n Tm_$*/
+	@r.mapcalc 'mc_Tm_$*=(mc_Tx_$*+mc_Tn_$*)/2.0' &>/dev/null;
+
+$(rast)/mc_es_%: $(rast)/mc_Tx_% $(rast)/mc_Tn_%
+	@echo -n es_$*/
+	@r.mapcalc '$(notdir $@)=0.6108 / 2 * (exp(mc_Tn_$* * 17.27/ (mc_Tn_$* + 237.3))+ exp(mc_Tx_$* * 17.27/ (mc_Tx_$* + 237.3)))' &> /dev/null;
+
+$(rast)/mc_et0_%: $(rast)/mc_Rs_% $(rast)/mc_Rnl_% $(rast)/mc_ea_% $(rast)/mc_Tx_% $(rast)/mc_Tn_% $(rast)/mc_U2_% $(rast)/mc_Tm_% $(rast)/mc_es_%
+	@echo mc_et0_$*/;
+	@DEL="(4098.17*0.6108*(exp(mc_Tm_$* * 17.27/(mc_Tm_$* + 237.3)))/(mc_Tm_$* +237.3)^2)"; \
+	GAM="psychrometric_constant@2km"; \
+	r.mapcalc mc_et0_$*="(900.0*$$GAM/(mc_Tm_$* + 273.0 )*mc_U2_$* * (mc_es_$*-mc_ea_$*)+0.408*$$DEL*(mc_Rs_$* * (1.0-0.23)+mc_Rnl_$*))/($$DEL+$$GAM*(1.0+0.34*mc_U2_$*))" &> /dev/null;
+	@r.colors map=mc_et0_$* rast=et0@default_colors > /dev/null
+
+$(rast)/mc_et0_sum: $(patsubst %,$(rast)/%,${mc_et0s})
+	sums=`echo ${mc_et0s} | sed -e 's/ /+/g'`; \
+	r.mapcalc mc_et0_sum=$$sums &> /dev/null
+
+$(rast)/mc_et0_sum2: $(patsubst %,$(rast)/%,${mc_et0s})
+	sums=`echo ${mc_et0s} | sed -e 's/ /^2+/g' -e 's/$$/^2/'`; \
+	r.mapcalc mc_et0_sum2=$$sums &> /dev/null
+
+$(rast)/mc_et0_avg: $(rast)/mc_et0_sum
+	r.mapcalc mc_et0_avg=mc_et0_sum/$(words ${count}) &> /dev/null
+	@r.colors map=mc_et0_avg rast=et0@default_colors > /dev/null
+
+$(rast)/mc_et0_err: $(rast)/mc_et0_sum $(rast)/mc_et0_sum2
+	r.mapcalc 'mc_et0_err=sqrt((mc_et0_sum2-(mc_et0_sum^2/$(words ${count})))/($(words ${count})-1))' &> /dev/null
+	@r.colors map=mc_et0_err rast=et0_err@default_colors > /dev/null
+
+$(rast)/mc_et0_err_3: $(rast)/mc_et0_err
+	r.lowpass --size=3 input=$(notdir $<) output=$(notdir $@) &>/dev/null
+	@r.colors map=mc_et0_err_3 rast=et0_err@default_colors > /dev/null
+
+###################################################################
+## This section makes quantized versions of the data
+###################################################################
+quantize=$(patsubst %,%_q,Tx Tn K Rs U2 ea es et0) 
+
+# This doesn't work, but what I did in 2km
+#$(rast)Z_q: $(rast)/%_q: $(rast)%
+#	r.macalc '$*_q=($*+100)/20';
+#	r.colors map=$*_q color=grey
+
+$(foreach p,$(quantize) clouds,$(eval $(call grass_shorthand_names,$(p))))
+
+.PHONY: quantize
+
+quantize: $(patsubst %,$(rast)/%,$(quantize) clouds)
+
+# Temperature need a better color table.
+$(rast)/Tn_q $(rast)/Tx_q: $(rast)/%_q: $(rast)/%
+	r.mapcalc '$*_q=int($*+100)' &> /dev/null;
+	@r.colors map=$*_q rast=$*_q@default_colors
+
+$(rast)/U2_q: $(rast)/%_q: $(rast)/%
+	r.mapcalc '$*_q=int(if($*<6,40*$*,255))' &> /dev/null;
+	@r.colors map=$*_q rast=$*_q@default_colors
+
+$(rast)/es_q $(rast)/ea_q: $(rast)/%_q: $(rast)/%
+	r.mapcalc '$*_q=int(if(10*$*<255,10*$*,255))' &> /dev/null;
+	@r.colors map=$*_q rast=$*_q@default_colors
+
+
+$(rast)/et0_q: $(rast)/%_q: $(rast)/%
+	r.mapcalc '$*_q=int(if($*<0,0,if(15*($*)>255,255,15*($*))))' &> /dev/null;
+	@r.colors map=$*_q rast=$*_q@default_colors
+
+$(rast)/K_q: $(rast)/%_q: $(rast)/%
+	r.mapcalc '$*_q=int(100*($*))' &> /dev/null;
+	@r.colors map=$*_q rast=$*_q@default_colors
+
+# Special quantize for clouds
+$(rast)/clouds: $(rast)/K_q
+	r.mapcalc 'clouds=if(K_q<30,100-K_q,null())' &> /dev/null;
+	@r.colors map=clouds rast=clouds@default_colors
+
+$(rast)/Rs_q: $(rast)/%_q: $(rast)/%
+	r.mapcalc '$*_q=int($*/50)' &> /dev/null;
+	@r.colors map=$*_q rast=$*_q@default_colors
+
+
+clean-quantize:
+	for q in $(quantize) clouds; do \
+	 g.findfile element=cellhd file=$$q && g.remove rast=$$q >/dev/null; \
+	done
+
+
+################################################################################################
+# Use rsync to sync with the GOES database
+################################################################################################
+.PHONY:rsync
+rsync:
+	@rsync  --quiet --timeout=10 --size-only --recursive rsync://goes-w.cstars.ucdavis.edu/gdb/${LOCATION_NAME}/${MAPSET}/ ${GISDBASE}/$(LOCATION_NAME)/$(MAPSET) && true 
+
+
+###################################################################
+# Mapset cleaning routines
+###################################################################
+.PHONY: clean clean-sites clean-tmp clean-rast
+
+clean: clean-sites clean-rast
+
+clean-csv:
+	@echo "Removing site csv";
+	@rm $(csv);
+
+clean-sites:
+	@echo "Removing $(sites)"
+	@for site in $(sites); do \
+	 g.findfile element=site_lists file=$$site &>/dev/null && g.remove sites=$$site > /dev/null; \
+	true; \
+	done
+
+clean-tmp:
+	@echo Cleaning tmp files
+	@tmp=`cd $(rast); echo _* | tr  ' ' ','`; \
+	if [[ $$tmp != '_*' ]]; then \
+	  g.remove rast=$$tmp > /dev/null;\
+	else \
+	echo None in MAPSET; \
+	fi;
+
+clean-rast:
+	@echo "Removing ALMOST all rasters"
+	@rm -f $(loc)/$(MAPSET)/cell_misc/MASK/reclassed_to
+	@tmp=`cd $(rast); ls | grep -v '^vis....$$' | grep -v '^vis...._[0-9]$$' | tr "\n" ','`; \
+	if [[ $$tmp != ',' && $$tmp != '' ]]; then \
+	echo "g.remove rast=$$tmp";\
+	g.remove rast=$$tmp > /dev/null;\
+	else \
+	echo None in MAPSET; \
+	fi;
+
+clean-lowpass:
+	g.remove rast=`echo $(patsubst %_9,%,vis$(HHMM)) | tr ' ' ','` > /dev/null;
+
+clean-etc:
+	rm -rf $(etc)
+
+clean-all: clean-sites clean-etc clean-rast
+
+
+

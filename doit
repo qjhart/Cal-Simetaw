@@ -1,0 +1,23 @@
+#! /bin/sh
+g=/proj/simetaw/gdb; 
+b=$g/etosimetaw; 
+for y in `seq 1960 1989`; do 
+    g.mapset gisdbase=$g location=etosimetaw mapset=$y; 
+    make-eto mapsets; 
+#    for m in `seq -f  %02.0f 1 1`; do 
+    for m in `seq -f  %02.0f 1 12`; do 
+	cd  $b/$y/$y-$m; g.mapset gisdbase=$b location=$y mapset=$y-$m; 
+	make-eto mapsets; 
+	for d in `echo $b/$y/$y-$m/$y-$m-??`; do 
+	    day=`basename $d`; 
+	    if (g.mapset mapset=$day location=$y-$m gisdbase=$b/$y 2>&1 > /dev/null); then 
+		for t in Tn Tx PCP; do 
+		    g.remove rast=d$t;
+		    if ! (g.findfile element=cellhd file=d$t); then 
+			g.remove vect=$t; make-eto d$t; 
+		    fi; 
+		done; 
+	    fi; 
+	done; 
+    done; 
+done

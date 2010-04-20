@@ -1,0 +1,11 @@
+#! /bin/sh
+g=/home/groups/etosimetaw/gdb; 
+b=$g/etosimetaw; 
+for y in `seq 1933 2008`; do 
+    g.mapset gisdbase=$g location=etosimetaw mapset=$y; 
+    make-eto mapsets -n
+    for m in `seq -f  %02.0f 1 12`; do 
+	cd  $b/$y/$y-$m; g.mapset gisdbase=$b location=$y mapset=$y-$m; 
+	make-eto mapsets; 
+    done; 
+done
