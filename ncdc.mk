@@ -58,4 +58,18 @@ db/ncdc.prism.${MAPSET}:db/ncdc.prism.%:${rast}/mTx ${rast}/mTn ${rast}/mPCP
 db/ncdc.m_delta_weather: db/ncdc
 	${PG} -f ncdc/delta_weather.sql
 
+csv-all-tables:=$(patsubst %,${out}/ncdc.%.csv,mflags qflags weather)
+csv-tables:=${csv-all-tables} ${out}/ncdc.station.csv
 
+.PHONY: csv zip
+csv:${csv-tables}
+
+${out}/ncdc.station.csv:
+	${PG-CSV} -c "select station_id,coopid,wbnid,name,country,state,county,cd,latitude,longitude,elevation from $*" > $@
+
+${csv-all-tables}:${out}/%.csv:
+	${PG-CSV} -c "select * from $*" > $@
+
+zip:${out}/ncdc.zip
+${out}/ncdc.zip:${csv-tables}
+	zip $@ ${csv-tables}

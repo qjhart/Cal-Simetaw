@@ -18,6 +18,7 @@ NRD:$(rast)/NRD
 NRF:$(rast)/NRF
 
 ${rast}/NRF ${rast}/NRD:${rast}/N%:
+	${NOMASK}
 	r.mapcalc '$(notdir $@)=$(patsubst %,"$*@%"+,${mapsets})0'
 
 .PHONY:TnTxPCPNRF.csv

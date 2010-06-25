@@ -8,18 +8,6 @@ ifndef configure.mk
 include configure.mk
 endif
 
-
-##############################################################################
-# MASK defines
-##############################################################################
-define MASK
-	@(g.findfile element=cellhd file=MASK || g.copy rast=state@2km,MASK) > /dev/null
-endef
-
-define NOMASK
-	@if ( g.findfile element=cellhd file=MASK > /dev/null); then g.remove MASK &>/dev/null; fi
-endef
-
 #####################################################################
 # Daily Mapset files
 #####################################################################
@@ -27,8 +15,9 @@ tension:=10
 zmult:=1
 smooth:=0.05
 
-v.surf.rst:=v.surf.rst maskmap=state@2km tension=${tension} \
-            zmult=${zmult} smooth=${smooth}
+#v.surf.rst:=v.surf.rst maskmap=state@4km tension=${tension} \
+#            zmult=${zmult} smooth=${smooth}
+v.surf.rst:=v.surf.rst tension=${tension} zmult=${zmult} smooth=${smooth}
 
 .PHONY: delta
 
@@ -58,7 +47,8 @@ ${vect}/d$1:
 	output=d$1 >/dev/null 2>/dev/null
 
 ${rast}/d$1: ${vect}/d$1
-	g.remove rast=d$1
+	g.remove rast=d$1; \
+	${NOMASK}; \
 	${v.surf.rst} input=d$1 zcolumn=dv elev=d$1 >/dev/null 2>/dev/null
 
 endef
@@ -69,7 +59,7 @@ $1::${rast}/$1
 day: ${rast}/$1
 
 ${rast}/$1: ${rast}/d$1 ${monthly-rast}/m$1
-	g.region -d; \
+	${NOMASK}
 	r.mapcalc '$1=if(d$1<0.0,0.0,d$1)*"m$1@${monthly-mapset}"' >/dev/null 2>/dev/null
 
 endef
@@ -80,7 +70,7 @@ $1::${rast}/$1
 day: ${rast}/$1
 
 ${rast}/$1: ${rast}/d$1 ${monthly-rast}/m$1
-	g.region -d; \
+	${NOMASK}; \
 	r.mapcalc '$1=d$1+"m$1@${monthly-mapset}"' >/dev/null 2>/dev/null
 
 endef
@@ -91,63 +81,62 @@ define daily
 TnTxPCPEToRF.csv:${etc}/TnTxPCPEToRF.csv
 ${etc}/TnTxPCPEToRF.csv: ${rast}/Tn ${rast}/Tx ${rast}/PCP ${rast}/ETo ${rast}/RF
 	@[[ -d $$(dir $$@) ]]  || mkdir $$(dir $$@);\
-	g.region rast=state@4km;\
-	r.mask -r input=MASK >/dev/null 2>/dev/null; r.mask input=state@4km >/dev/null 2>/dev/null;\
+	${MASK};\
 	date=`g.gisenv MAPSET`;\
 	r.stats -1 -n -x Tn,Tx,PCP,ETo,RF 2>/dev/null | sed -e "s/^/$$$$date /" | tr ' ' ',' > $$@;\
 	r.mask -r input=MASK >/dev/null 2>/dev/null;\
-	g.region -d;
+	${NOMASK};
 
 .PHONY:sretr
 sretr:${rast}/srha
 ${rast}/srha:
-	@g.region -d;\
+	@${NOMASK};\
 	pi=3.14159265;\
 	julian=`date --date="${MAPSET}" +%j`;\
 	jul_deg="(360*($$$$julian/365.0))";\
 	dr="(1.0+0.033*cos($$$$jul_deg))";\
 	declination="180.0/$$$$pi*0.409*sin($$$$jul_deg-79.64)";\
-	r.mapcalc "srha=acos(-tan(latitude_deg@2km)*tan($$$$declination))"; 
+	r.mapcalc "srha=acos(-tan(latitude_deg@4km)*tan($$$$declination))"; 
 
 .PHONY:Ra
 Ra:${rast}/Ra
 ${rast}/Ra:${rast}/srha
-	@g.region -d;\
+	@${NOMASK};\
 	pi=3.14159265; Gsc=0.082; \
 	julian=`date --date="${MAPSET}" +%j`;\
 	jul_deg="(360*($$$$julian/365.0))";\
 	dr="(1.0+0.033*cos($$$$jul_deg))";\
 	declination="180.0/$$$$pi*0.409*sin($$$$jul_deg-79.64)";\
-	r.mapcalc "Ra=(24.0*60.0/$$$$pi)*$$$$Gsc*$$$$dr*((srha*$$$$pi/180.0)*sin($$$$declination)*sin(latitude_deg@2km)+cos(latitude_deg@2km)*cos($$$$declination)*sin(srha))";
+	r.mapcalc "Ra=(24.0*60.0/$$$$pi)*$$$$Gsc*$$$$dr*((srha*$$$$pi/180.0)*sin($$$$declination)*sin(latitude_deg@4km)+cos(latitude_deg@4km)*cos($$$$declination)*sin(srha))";
 
 .PHONY:Tm
 Tm:$(rast)/Tm
 $(rast)/Tm: $(rast)/Tx $(rast)/Tn
-	@g.region -d; \
+	@${NOMASK}; \
 	r.mapcalc "Tm=(Tx+Tn)/2";
 
 .PHONY:ETh
 ETh:$(rast)/ETh
 $(rast)/ETh: $(rast)/Tm $(rast)/Tx $(rast)/Tn $(rast)/Ra
-	@g.region -d;\
+	@${NOMASK};\
 	r.mapcalc "ETh=if(Tx<Tn,0,0.408*(0.0023*Ra*(Tm+17.8))*(sqrt(Tx-Tn)))" 2>/dev/null;
 
 .PHONY:ETo
 ETo:$(rast)/ETo
 $(rast)/ETo:$(rast)/ETh 
-	@g.region -d;\
-	r.mapcalc "ETo=ETh*cfhs@2km" 2>/dev/null;\
+	@${NOMASK};\
+	r.mapcalc "ETo=ETh*cfhs@4km" 2>/dev/null;\
 
 .PHONY:RD
 RD:$(rast)/RD
 $(rast)/RD: $(rast)/ETo $(rast)/PCP
-	@g.region -d;\
+	@${NOMASK};\
 	r.mapcalc "RD=if(ETo>PCP,0,1)";
 
 .PHONY:RF
 RF:$(rast)/RF
 $(rast)/RF: $(rast)/ETo $(rast)/PCP
-	@g.region -d; \
+	@${NOMASK}; \
 	r.mapcalc "RF=if(isnull(ETo),if(PCP>0,1,0),if(ETo>PCP,0,1))" >/dev/null 2>/dev/null;
 
 endef

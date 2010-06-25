@@ -1,0 +1,47 @@
+\set ON_ERROR_STOP 1
+BEGIN;
+drop schema if exists dylan cascade;
+create schema dylan;
+set search_path=dylan, public;
+
+create table statsgo (
+dwr_id varchar(8) primary key,
+AWHC float,
+SDx float
+);
+
+create table ssurgo (
+dwr_id varchar(8) primary key,
+AWHC float,
+SDx float
+);
+
+create table soil (
+dwr_id varchar(8) primary key,
+AWHC float,
+SDx float
+);
+
+create temp table t (
+id varchar(8),
+id_line varchar(120),
+wt_mean_awc float,
+wt_mean_soil_depth float);
+
+COPY t (id_line,wt_mean_awc,wt_mean_soil_depth) from 'statsgo.csv' WITH DELIMITER AS ',' QUOTE AS '"' CSV HEADER;
+
+update t set id=substring(id_line,1,search(',' in id_line);
+
+insert into sstatsgo (id,AWHC,SDx) 
+select id,wt_mean_awc,wt_mean_soil_depth from t;
+
+truncate t;
+
+COPY t (id_line,wt_mean_awc,wt_mean_soil_depth) from 'ssurgo.csv' WITH DELIMITER AS ',' QUOTE AS '"' CSV HEADER;
+
+update t set id=substring(id_line,1,search(',' in id_line);
+
+insert into sssurgo (id,AWHC,SDx) 
+select id,wt_mean_awc,wt_mean_soil_depth from t;
+
+END;

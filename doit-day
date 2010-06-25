@@ -2,10 +2,11 @@
 g=/proj/simetaw/gdb; 
 b=$g/etosimetaw; 
 
-for y in 2003; do 
+for y in `seq $1 $2`; do 
    g.mapset location=${y} mapset=PERMANENT; 
    for m in `g.mapsets -l | tr ' ' "\n" | grep "${y}-..-.."`; do 
      g.mapset mapset=$m; 
+     g.remove dTn,dTx,dPCP 2> /dev/null > /dev/null
      make --include-dir=~/etosimetaw/bin -f ~/etosimetaw/bin/daily.mk TnTxPCPEToRF.csv; 
    done ;
  done

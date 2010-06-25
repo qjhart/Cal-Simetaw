@@ -4,8 +4,8 @@ ifndef configure.mk
 include configure.mk
 endif
 
-.PHONY:db/4km
-db/4km:${db}/4km
+.PHONY:db
+db::${db}/4km ${db}/4km.pixels ${db}/4km.cfhs
 
 ${db}/4km:
 	${PG} -f 4km/schema.sql
@@ -14,16 +14,17 @@ ${db}/4km:
 .PHONY: pixels
 stations:${stations}
 
+# In reality, the 4km.pixels file should almost take precedence....
 .PHONY:db/4km.pixels
 db/4km.pixels:${db}/4km.pixels
 ${db}/4km.pixels:${db}/4km
 	g.region rast=state@4km
+#	r.mask -r
 	r.mask -o state@4km
-	r.stats -1 -x -n -g longitude_deg@4km,latitude_deg@4km | ${PG} -c "COPY \"4km\".pixels(east,north,x,y,longitude,latitude) from STDIN WITH DELIMITER ' ';"
+	r.stats -1 -x -N -g state@4km,prism_mask@4km,cimis_mask@4km | sed -e 's/\*/0/g' | ${PG} -c "COPY \"4km\".pixels(east,north,x,y,dwr,prism,cimis) from STDIN WITH DELIMITER ' ';"
+	${PG} -c "select AddGeometryColumn('4km','pixels','centroid',3310,'POINT',2); select AddGeometryColumn('4km','pixels','boundary',3310,'POLYGON',2); update \"4km\".pixels set centroid=setsrid(MakePoint(east,north),3310),boundary=setsrid(Envelope(ST_MakeBox2D(MakePoint(east-2000,north-2000),MakePoint(east+2000,north+2000))),3310); update \"4km\".pixels set longitude=y(transform(centroid,4269)),latitude=x(transform(centroid,4269)),dwr_id=y||'_'||x;"
 	touch $@
 
-.PHONY:db/4km.cfhs
-db/4km.cfhs:${db}/4km.cfhs
 ${db}/4km.cfhs:${db}/4km.pixels
 	g.region rast=state@4km
 	r.mask -o state@4km
@@ -40,16 +41,15 @@ ifdef is_daily
 .PHONY:4km
 
 4km: ${db}/4km ${rast}/Tn ${rast}/Tx ${rast}/PCP ${rast}/ETo ${rast}/RF
-	@g.region rast=state@4km;\
-	r.mask -o input=state@4km >/dev/null 2>/dev/null;\
+	${MASK}
 	date=`g.gisenv MAPSET`;\
 	doy=`date --date=${date} +%j`;\
 	declare -a M=(`g.gisenv MAPSET | tr '-' ' '`);\
-	${PG} -c "delete from \"4km\".daily${YYYY} where ymd='$${date}'";\
+	${PG} -c "delete from \"4km\".daily where ymd='$${date}'";\
 	r.stats -1 -n -x fs=, input=Tn,Tx,PCP,ETo,RF 2>/dev/null |\
 	sed -e "s/^/$$date,$${M[0]},$${M[1]},$${M[2]},$$doy,/" |\
-	${PG} -c 'COPY "4km".daily${YYYY} (ymd,year,month,day,doy,x,y,Tn,Tx,PCP,ETo,RF) from STDIN WITH CSV';
-	@r.mask -r;
+	${PG} -c 'COPY "4km".daily (ymd,year,month,day,doy,x,y,Tn,Tx,PCP,ETo,RF) from STDIN WITH CSV';
+	${NOMASK}
 
 endif
 
@@ -103,7 +103,7 @@ ${out}/4km/prism.csv:
 	${PG-CSV} -c "select x,y,year,month,tn,tx,pcp,nrd from \"4km\".prism order by x,y,year,month" > $@
 
 ${out}/4km/pixels.csv:
-	${PG-CSV} -c "select x,y,east,north,longitude,latitude from \"4km\".pixels order by x,y" > $@
+	${PG-CSV} -c "select x,y,east,north,longitude,latitude,dwr_id,dwr,prism,cimis from \"4km\".pixels order by x,y" > $@
 
 ${out}/4km/cfhs.csv:
 	${PG-CSV} -c "select x,y,cfhs from \"4km\".cfhs order by x,y" > $@
@@ -121,7 +121,7 @@ cimis.csv::${out}/4km/cimis_${1}x.csv
 ${out}/4km/cimis_${1}x.csv:
 	rm -f $$@;
 	for i in 0 1 2 3 4 5 6 7 8 9; do \
-	${PG-CSV} -c "select x,y,ymd,d.year,d.month,d.day,d.doy,CASE WHEN c is not null THEN c.Tx ELSE d.Tx END as Tx,case WHEN c is not null then c.Tn else d.tn END as Tn, d.pcp, CASE WHEN c is not null then c.et0 else d.eto END as eto,d.rf,case when c is not null then True else False END as cimis from \"4km_byrow\".daily_${1}$$$$i d left join \"4km_byrow\".cimis_${1}$$$$i c using (x,y,ymd) order by x,y,ymd" >> $$@; \
+	${PG-CSV} -c "select x,y,ymd,d.year,d.month,d.day,d.doy,CASE WHEN c is not null THEN c.Tx ELSE d.Tx END as Tx,case WHEN c is not null then c.Tn else d.tn END as Tn,c.Rs,c.K,c.U2,(ln(c.ea/0.6108)*237.30/(17.27-ln(c.ea/0.6108)))::decimal(10,2) as Tdew,d.pcp, CASE WHEN c is not null then c.et0 else d.eto END as eto,d.rf,case when c is not null then True else False END as cimis from \"4km_byrow\".daily_${1}$$$$i d left join \"4km_byrow\".cimis_${1}$$$$i c using (x,y,ymd) order by x,y,ymd" >> $$@; \
 	done;
 endef
 

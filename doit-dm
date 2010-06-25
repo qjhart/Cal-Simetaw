@@ -1,22 +1,33 @@
-#! /bin/sh
-g=/proj/simetaw/gdb; 
-b=$g/etosimetaw; 
-for y in `seq $1 $2`; do 
-    echo -n "$y "
-#    for m in 11 ; do
-    for m in 01 02 03 04 05 06 07 08 09 10 11 12; do
-	echo -n "$m "
+#! /bin/bash
+g=/home/quinn/gdb;
+b=$g/etosimetaw;
+
+if [[ -z $1 ]] ; then sy=1997; else sy=$1; fi
+if [[ -z $2 ]] ; then ey=2007; else ey=$2; fi
+
+for y in `seq $sy $ey`; do 
+    if [[ $y = 1997 ]] ; then sm=10; else sm=1; fi
+    if [[ $y = 2007 ]] ; then em=09; else em=12; fi
+    echo $y-$sm to $y-$em
+    for m in `seq -f  %02.0f $sm $em`; do 
+	# Pre Month stuff
+#      if (g.mapset mapset=${y}-${m} location=$y 2>/dev/null > /dev/null); then
+#	  make 
+#     fi;
       for d in `echo $b/$y/$y-${m}-??`; do 
 	  day=`basename $d`; 
+	  echo $day;
 	  if (g.mapset mapset=$day location=$y gisdbase=$b 2>/dev/null >/dev/null); then 
-#	      g.remove PCP,ETh,ETo,RD 2>/dev/null >/dev/null;
-#	      rm -f ${b}/${y}/${day}/etc/TnTxPCPEToRF.csv;
-	      make-eto TnTxPCPEToRF.csv
+#            g.remove dTn,dTx,dPCP 2> /dev/null > /dev/null
+           make --include-dir=~/etosimetaw/bin -f ~/etosimetaw/bin/4km.mk 4km;
 	  fi; 
       done;
-      if (g.mapset mapset=${y}-${m} location=$y 2>/dev/null > /dev/null); then
-	  make-eto TnTxPCPNRF.csv
-      fi;
+# Post Day stuff
+#      if (g.mapset mapset=${y}-${m} location=$y 2>/dev/null > /dev/null); then
+#	  g.remove PCP;
+#          make --include-dir=~/etosimetaw/bin -f ~/etosimetaw/bin/4km.mk prism
+#          make --include-dir=~/etosimetaw/bin -f ~/etosimetaw/bin/monthly.mk TnTxPCPEToRF.csv; 
+#      fi;
     done
     echo '';
 done

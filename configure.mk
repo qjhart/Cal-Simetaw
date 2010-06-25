@@ -28,6 +28,7 @@ SHELL:=/bin/bash
 # Filesystem
 fs-root:=/home/quinn/etosimetaw
 out:=${fs-root}/output
+down:=${fs-root}/data
 
 # Input Postgres DB
 db:=/home/quinn/etosimetaw/db
@@ -38,7 +39,7 @@ PG-CSV:= ${PG} -A -F',' --pset footer
 
 
 #v.in.ogr:=v.in.ogr -e dsn="PG:dbname=${db} host=casil.ucdavis.edu port=5433 user=qjhart"
-v.in.ogr:=v.in.ogr -e dsn="PG:dbname=${db} port=5433"
+v.in.ogr:=v.in.ogr -e dsn="PG:dbname=${database} port=5433"
 
 # Grass specific functions
 define grass_or_die
@@ -80,8 +81,26 @@ gdb:=${GISDBASE}
 
 endif
 
-ifeq (${MAPSET},${db})
+##############################################################################
+# MASK defines
+##############################################################################
+#define MASK
+#g.region rast=state@4km; (g.findfile element=cellhd file=MASK || g.copy rast=sta#te@4km,MASK) > /dev/null
+#endef
 
+define MASK
+g.region rast=state@4km; r.mask -o input=state@4km;
+endef
+
+define NOMASK
+g.region rast=state@4km; if ( g.findfile element=cellhd file=MASK > /dev/null); then g.remove MASK &>/dev/null; fi
+endef
+
+####################################
+# Mapset specific
+####################################
+
+ifeq (${MAPSET},${db})
 
 else # is YEAR
 
