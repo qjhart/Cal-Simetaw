@@ -65,10 +65,11 @@ csv-tables:=${csv-all-tables} ${out}/ncdc.station.csv
 csv:${csv-tables}
 
 ${out}/ncdc.station.csv:
-	${PG-CSV} -c "select station_id,coopid,wbnid,name,country,state,county,cd,latitude,longitude,elevation from $*" > $@
+	${PG-CSV} -c "select station_id,coopid,wbnid,name,country,state,county,cd,latitude,longitude,elevation from ncdc.station" > $@
 
 ${csv-all-tables}:${out}/%.csv:
-	${PG-CSV} -c "select * from $*" > $@
+	${PG} -c '\copy $* TO $@ CSV'
+#	${PG-CSV} -c "select * from $*" > $@
 
 zip:${out}/ncdc.zip
 ${out}/ncdc.zip:${csv-tables}
