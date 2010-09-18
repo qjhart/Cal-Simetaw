@@ -1,12 +1,6 @@
 #! /usr/bin/make -f
 configure.mk:=1
 
-#start_year:=1987
-#years:=                                        1988 1989 \
-#       1990 1991 1992 1993 1994 1995 1996 1997 1998 1999 \
-#       2000 2001 2002 2003 2004 2005 2006 
-#end_year:=2007
-
 start_year:=1920
 end_year:=2007
 mid_years:= $(shell seq `echo ${start_year}+1 | bc` `echo ${end_year}-1 | bc`)
@@ -35,6 +29,7 @@ db:=/home/quinn/etosimetaw/db
 database:=etosimetaw
 PG:=psql -d ${database}
 PG-CSV:= ${PG} -A -F',' --pset footer
+PG-SITE:= ${PG} -A -F'|' -t
 #PG:= psql -d ${db} -h casil.ucdavis.edu -U qjhart -p 5433
 
 
@@ -93,6 +88,10 @@ g.region rast=state@4km; r.mask -o input=state@4km;
 endef
 
 define NOMASK
+g.region rast=state@4km; r.mask -r
+endef
+
+define NOMASK-OLD
 g.region rast=state@4km; if ( g.findfile element=cellhd file=MASK > /dev/null); then g.remove MASK &>/dev/null; fi
 endef
 
@@ -132,3 +131,5 @@ info::
 days.mk:
 	echo days:=$$(for ym in ${yms}; do for dom in `seq 0 31`; do date --date="$${ym}-01 + $${dom} days" +%Y-%m-%d; done ; done | sort -u ) > $@
 
+yms:
+	@echo ${yms}

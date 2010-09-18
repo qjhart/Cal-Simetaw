@@ -1,11 +1,14 @@
-#! /usr/bin/make --include-dir=/home/quinn/etosimetaw/bin -f 
+#! /usr/bin/make -f
 
 # This setup was for a multi-day setup.  I'm not sure that's the best
 # idea, so some of this is going in the daily.mk file as well.  (one
 # mapset only
+#yr=1948; for d in `seq 0 3285`; do m=`date --date="${yr}-01-01 + $d days" --rfc-3339=date`; y=${m%%-*};  g.mapset location=$y mapset=$m; time ~/etosimetaw/bin/daily.mk ETo RF; done
+
+INC:=/home/quinn/etosimetaw/bin
 
 ifndef configure.mk
-include configure.mk
+include ${INC}/configure.mk
 endif
 
 #####################################################################
@@ -25,6 +28,12 @@ ncdc_name_Tx:=TMAX
 ncdc_name_Tn:=TMIN
 ncdc_name_PCP:=PRCP
 
+define set_vect
+g.remove vect=d$1;\
+g.region -d;g.region rast=state@4km; \
+db.connect driver=sqlite database='$$$$GISDBASE/$$$$LOCATION_NAME/$$$$MAPSET/sqlite.db'; 
+endef
+
 define ncdc
 
 .PHONY: $1
@@ -32,7 +41,7 @@ $1::${vect}/$1
 
 ${vect}/$1:
 	${v.in.ogr} layer=ncdc.weather \
-	where="date='${MAPSET}' and type='$1' and m NOT IN ('E','M','S','(');" \
+	where="day='${MAPSET}' and elem='$${ncdc_name_$1}' and m NOT IN ('E','M','S','(');" \
 	output=$1 >/dev/null 2>/dev/null
 
 .PHONY: delta
@@ -41,15 +50,22 @@ delta::d$1
 d$1:${rast}/d$1
 
 ${vect}/d$1:
-	g.remove vect=d$1
-	${v.in.ogr} layer=ncdc.m_delta_weather \
-        where="day='${MAPSET}' and elem='$${ncdc_name_$1}'" \
-	output=d$1 >/dev/null 2>/dev/null
+	$(call set_vect,$1)
+	[[ -d ${map}/site_lists ]] || mkdir ${map}/site_lists; \
+	${PG-SITE} -c "select x(centroid),y(centroid),'#'||station_id||' %'||dv from ncdc.m_delta_weather where day='${MAPSET}' and elem='$${ncdc_name_$1}'" > ${map}/site_lists/d$1;\
+	v.in.sites input=d$1 output=d$1; \
+	g.remove site=d$1
+
+# v.in.ogr is about 7 times slower then converting to a sites file as above
+# ${vect}/d$1:
+# 	$(call set_vect,$1)
+# 	${v.in.ogr} layer=ncdc.m_delta_weather \
+#         where="day='${MAPSET}' and elem='$${ncdc_name_$1}'" \
+# 	output=d$1 >/dev/null 2>/dev/null
 
 ${rast}/d$1: ${vect}/d$1
-	g.remove rast=d$1; \
 	${NOMASK}; \
-	${v.surf.rst} input=d$1 zcolumn=dv elev=d$1 >/dev/null 2>/dev/null
+	${v.surf.rst} input=d$1 zcolumn=flt1 elev=d$1 >/dev/null 2>/dev/null
 
 endef
 
@@ -59,7 +75,7 @@ $1::${rast}/$1
 day: ${rast}/$1
 
 ${rast}/$1: ${rast}/d$1 ${monthly-rast}/m$1
-	${NOMASK}
+	${NOMASK};
 	r.mapcalc '$1=if(d$1<0.0,0.0,d$1)*"m$1@${monthly-mapset}"' >/dev/null 2>/dev/null
 
 endef
@@ -76,16 +92,6 @@ ${rast}/$1: ${rast}/d$1 ${monthly-rast}/m$1
 endef
 
 define daily
-
-.PHONY:TnTxPCPEToRF.csv
-TnTxPCPEToRF.csv:${etc}/TnTxPCPEToRF.csv
-${etc}/TnTxPCPEToRF.csv: ${rast}/Tn ${rast}/Tx ${rast}/PCP ${rast}/ETo ${rast}/RF
-	@[[ -d $$(dir $$@) ]]  || mkdir $$(dir $$@);\
-	${MASK};\
-	date=`g.gisenv MAPSET`;\
-	r.stats -1 -n -x Tn,Tx,PCP,ETo,RF 2>/dev/null | sed -e "s/^/$$$$date /" | tr ' ' ',' > $$@;\
-	r.mask -r input=MASK >/dev/null 2>/dev/null;\
-	${NOMASK};
 
 .PHONY:sretr
 sretr:${rast}/srha

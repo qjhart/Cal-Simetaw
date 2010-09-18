@@ -1,8 +1,15 @@
 #! /usr/bin/make -f 
 
+INC:=/home/quinn/etosimetaw/bin
 ifndef configure.mk
-include configure.mk
+include ${INC}/configure.mk
 endif
+
+rows:=$(shell seq -f %03g 0 299)
+
+.PHONY:INFO
+INFO::
+	echo ${rows}
 
 .PHONY:db
 db::${db}/4km ${db}/4km.pixels ${db}/4km.cfhs
@@ -111,13 +118,16 @@ ${out}/4km/cfhs.csv:
 
 .PHONY: cimis.csv
 
+	${PG-CSV} -c "select x,y,ymd,c.year,c.month,c.day,c.doy,c.Tx,c.Tn,c.Rs,c.K,c.U2,c.Tdew,c.et0,d.pcp from \"4km\".daily_${1}$$$$i d join \"4km\".cimis_${1}$$$$i c using (x,y,ymd) order by x,y,ymd" >> $$@; \
+
 define cimis-row.csv
 cimis.csv::${out}/4km/cimis_${1}x.csv
 ${out}/4km/cimis_${1}x.csv:
 	rm -f $$@;
 	for i in 0 1 2 3 4 5 6 7 8 9; do \
-	${PG-CSV} -c "select x,y,ymd,d.year,d.month,d.day,d.doy,CASE WHEN c is not null THEN c.Tx ELSE d.Tx END as Tx,case WHEN c is not null then c.Tn else d.tn END as Tn,c.Rs,c.K,c.U2,(ln(c.ea/0.6108)*237.30/(17.27-ln(c.ea/0.6108)))::decimal(10,2) as Tdew,d.pcp, CASE WHEN c is not null then c.et0 else d.eto END as eto,d.rf,case when c is not null then True else False END as cimis from \"4km\".daily_${1}$$$$i d left join \"4km_byrow\".cimis_${1}$$$$i c using (x,y,ymd) order by x,y,ymd" >> $$@; \
-	done;
+	${PG-CSV} -c "select x,y,ymd,d.year,d.month,d.day,d.doy,CASE WHEN c.Tx is not null THEN c.Tx ELSE d.Tx END as Tx,case WHEN c.Tn is not null then c.Tn else d.tn END as Tn,c.Rs,c.K,c.U2,c.Tdew,d.pcp, CASE WHEN c.et0 is not null then c.et0 else d.eto END as eto,d.rf,case when c.et0 is not null then True else False END as cimis from \"4km\".pixels p join \"4km\".daily_${1}$$$$i d using(x,y) left join \"4km\".cimis_${1}$$$$i c using (x,y,ymd) where p.cimis is True and ymd>='2003-10-01' order by y,x,ymd" >> $$@; \
+	done;\
+	perl -n -i -e 'print unless (/^x/ && $$$$x==1);$$$$x=1;' $$@
 endef
 
 #daily-csv:=$(patsubst %,${out}/4km/%.csv,${years})
@@ -125,11 +135,13 @@ endef
 #	${PG-CSV} -c "select x,y,ymd,year,month,day,doy,tx,tn,pcp from \"4km\".daily$* order by x,y,ymd" > $@
 
 define daily-row.csv
-daily.csv::${out}/4km/daily_${1}x.csv
-${out}/4km/daily_${1}x.csv:
+daily.csv::dailyxxx_${2}.csv
+dailyxxx_${2}.csv::daily${1}x_${2}.csv
+daily${1}x_${2}.csv::${out}/4km/daily${1}x_${2}.csv
+${out}/4km/daily${1}x_${2}.csv:
 	rm -f $$@;
 	for i in 0 1 2 3 4 5 6 7 8 9; do \
-	${PG-CSV} -c "select x,y,ymd,year,month,day,doy,Tx,Tn,pcp,eto,rf from \"4km\".daily_${1}$$$$i d  order by x,y,ymd" >> $$@; \
+	${PG-CSV} -c "select x,y,ymd,year,month,day,doy,Tx,Tn,pcp,eto,rf from daily4km.daily${1}$$$$i d where year>=${2} and year<${2}+10 order by x,y,ymd" >> $$@; \
 	done; \
 	perl -n -i -e 'print unless (/^x/ && $$$$x==1);$$$$x=1;' $$@
 endef
@@ -140,7 +152,7 @@ rows:=00 01 02 03 04 05 06 07 08 09 \
 20 21 22 23 24 25 26
 
 $(foreach i,${rows},$(eval $(call cimis-row.csv,$i)))
-$(foreach i,${rows},$(eval $(call daily-row.csv,$i)))
+$(foreach d,1980 1990 2000,$(foreach i,${rows},$(eval $(call daily-row.csv,$i,$d))))
 
 
 

@@ -60,6 +60,7 @@ db/ncdc.m_delta_weather: db/ncdc
 
 csv-all-tables:=$(patsubst %,${out}/ncdc.%.csv,mflags qflags weather)
 csv-tables:=${csv-all-tables} ${out}/ncdc.station.csv
+	touch $@
 
 .PHONY: csv zip
 csv:${csv-tables}
