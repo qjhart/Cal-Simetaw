@@ -130,9 +130,16 @@ ${out}/4km/cimis_${1}x.csv:
 	perl -n -i -e 'print unless (/^x/ && $$$$x==1);$$$$x=1;' $$@
 endef
 
-#daily-csv:=$(patsubst %,${out}/4km/%.csv,${years})
-#${daily-csv}:${out}/4km/%.csv:
-#	${PG-CSV} -c "select x,y,ymd,year,month,day,doy,tx,tn,pcp from \"4km\".daily$* order by x,y,ymd" > $@
+.PHONY: prism.csv
+define prism-row.csv
+prism.csv::${out}/4km/prism${1}x.csv
+${out}/4km/prism${1}x.csv:
+	rm -f $$@;
+	for i in 0 1 2 3 4 5 6 7 8 9; do \
+	${PG-CSV} -c "select x,y,year,month,tx,tn,pcp,nrd from prism4km.prism${1}$$$$i d order by y,x,year,month" >> $$@; \
+	done;\
+	perl -n -i -e 'print unless (/^x/ && $$$$x==1);$$$$x=1;' $$@
+endef
 
 define daily-row.csv
 daily.csv::dailyxxx_${2}.csv
@@ -151,8 +158,11 @@ rows:=00 01 02 03 04 05 06 07 08 09 \
 10 11 12 13 14 15 16 17 18 19 \
 20 21 22 23 24 25 26
 
+decades:=1920 1930 1940 1950 1960 1970 1980 1990 2000
+
+$(foreach i,${rows},$(eval $(call prism-row.csv,$i)))
 $(foreach i,${rows},$(eval $(call cimis-row.csv,$i)))
-$(foreach d,1980 1990 2000,$(foreach i,${rows},$(eval $(call daily-row.csv,$i,$d))))
+$(foreach d,${decades},$(foreach i,${rows},$(eval $(call daily-row.csv,$i,$d))))
 
 
 

@@ -1,11 +1,12 @@
-#! /usr/bin/make --include-dir=/home/quinn/etosimetaw/bin -f 
+#! /usr/bin/make -f
 
 # This setup was for a multi-day setup.  I'm not sure that's the best
 # idea, so some of this is going in the daily.mk file as well.  (one
 # mapset only
 
+INC:=/home/quinn/etosimetaw/bin
 ifndef configure.mk
-include configure.mk
+include ${INC}/configure.mk
 endif
 
 ifdef is_monthly

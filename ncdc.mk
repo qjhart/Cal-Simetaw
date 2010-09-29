@@ -57,10 +57,10 @@ db/ncdc.prism.${MAPSET}:db/ncdc.prism.%:${rast}/mTx ${rast}/mTn ${rast}/mPCP
 
 db/ncdc.m_delta_weather: db/ncdc
 	${PG} -f ncdc/delta_weather.sql
+	touch $@
 
 csv-all-tables:=$(patsubst %,${out}/ncdc.%.csv,mflags qflags weather)
 csv-tables:=${csv-all-tables} ${out}/ncdc.station.csv
-	touch $@
 
 .PHONY: csv zip
 csv:${csv-tables}

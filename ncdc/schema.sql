@@ -87,7 +87,7 @@ PCP float
 -- using (station_id,year,month) 
 -- group by station_id;
 
-create view delta_weather as 
+create or replace view delta_weather as 
 select w.station_id,day,elem,v-p.Tn as dv
 from ncdc.weather w join ncdc.prism p
 on (w.station_id=p.station_id 
@@ -102,7 +102,7 @@ on (w.station_id=p.station_id
     and extract(month from day)=p.month)
 where elem='TMAX' and m NOT IN ('E','M','S','(') 
 union
-select w.station_id,day,elem,(v/m.PCP)*p.PCP
+select w.station_id,day,elem,case when m.PCP=0 then 0 else (v/m.PCP) end
 from 
 ( select station_id,day,elem,v,
          extract(year from day) as year,
@@ -111,8 +111,7 @@ from
 join ncdc.prism p
 using (station_id,year,month)
 join m_monthly_weather m 
-using (station_id,year,month)
-where m.PCP > 0;
+using (station_id,year,month);
 
 
 create table mflags (

@@ -11,13 +11,17 @@ endif
 schema:=daily4km
 rows:=$(shell seq -f %03g 0 299)
 rowtables:=$(patsubst %,${db}/${schema}.daily%,${rows})
+rowtable-indices:=$(patsubst %,${db}/${schema}.daily%.idx,${rows})
+
+prism-schema:=prism4km
+prism-rowtables:=$(patsubst %,${db}/${prism-schema}.prism%,${rows})
 
 .PHONY:INFO
 INFO::
 	echo ${rows}
 
 .PHONY:db
-db::${db}/${schema} ${rowtables}
+db::${db}/${schema} ${rowtables} ${prism-rowtables}
 
 ${db}/${schema}:
 	${PG} --variable=dailySchema=${schema} -f daily4km/schema.sql
@@ -27,8 +31,23 @@ ${rowtables}:${db}/${schema}.daily%:${db}/${schema}
 	${PG} --variable=dailySchema=${schema} --variable=r=$* -f daily4km/add_daily4km.sql
 	touch $@
 
-.PHONY: 4km
-4km: ${rast}/Tn ${rast}/Tx ${rast}/PCP ${rast}/ETo ${rast}/RF
+rowtable-indices:${rowtable-indices}
+${rowtable-indices}:${db}/${schema}.daily%:${db}/${schema}
+	${PG} --variable=dailySchema=${schema} --variable=r=$* -f daily4km/add_daily4km.sql
+	touch $@
+
+
+${db}/${prism-schema}:
+	${PG} --variable=prismSchema=${prism-schema} -f daily4km/prism.sql
+	touch $@
+
+${prism-rowtables}:${db}/${prism-schema}.prism%:${db}/${prism-schema}
+	${PG} --variable=prismSchema=${prism-schema} --variable=r=$* -f daily4km/add_prism.sql
+	touch $@
+
+ifdef is_daily
+.PHONY: 4km-byrow
+4km-byrow: ${rast}/Tn ${rast}/Tx ${rast}/PCP ${rast}/ETo ${rast}/RF
 	${MASK}
 	@date=`g.gisenv MAPSET`;\
 	doy=`date --date=${date} +%j`;\
@@ -43,7 +62,12 @@ ${rowtables}:${db}/${schema}.daily%:${db}/${schema}
 	done; 
 	${NOMASK}
 
-4km-all: ${rast}/Tn ${rast}/Tx ${rast}/PCP ${rast}/ETo ${rast}/RF
+endif
+
+.PHONY: 4km
+4km: ${etc}/db/4km
+${etc}/db/4km: ${rast}/Tn ${rast}/Tx ${rast}/PCP ${rast}/ETo ${rast}/RF
+	[[ -d ${etc}/db ]] || mkdir -p ${etc}/db
 	${MASK}
 	@date=`g.gisenv MAPSET`;\
 	doy=`date --date=${date} +%j`;\
@@ -52,7 +76,26 @@ ${rowtables}:${db}/${schema}.daily%:${db}/${schema}
 	sed -e "s/^/$$date,$${M[0]},$${M[1]},$${M[2]},$$doy,/" |\
 	${PG} -c "COPY \"${schema}\".daily (ymd,year,month,day,doy,x,y,Tn,Tx,PCP,ETo,RF) from STDIN WITH CSV";
 	${NOMASK}
+	touch $@
 
+ifdef is_monthly
+
+#$(warning is_monthly ${is_monthly})
+
+.PHONY: prism
+prism: ${etc}/db/prism
+${etc}/db/prism: ${rast}/mTn ${rast}/mTx ${rast}/mPCP ${rast}/NRF
+#${etc}/db/prism:
+	[[ -d ${etc}/db ]] || mkdir -p ${etc}/db
+	${MASK}
+	@declare -a M=(`g.gisenv MAPSET | tr '-' ' '`);\
+	r.stats fs=, -1 -N -x input=mTn,mTx,mPCP,NRF |\
+	sed -e "s/^/$${M[0]},$${M[1]},/" -e "s/*/999/" |\
+	${PG} -c 'COPY "${prism-schema}".prism (year,month,x,y,Tn,Tx,PCP,NRD) from STDIN WITH CSV';
+	${NOMASK}
+	touch $@
+
+endif
 
 
 
