@@ -1,0 +1,345 @@
+\set ON_ERROR_STOP 1
+BEGIN;
+drop schema if exists :cimisSchema cascade;
+create schema :cimisSchema;
+set search_path=:cimisSchema,public;
+
+create table cimis (
+x integer,
+y integer,
+ymd date,
+year integer check (year >0),
+month integer check (month >=1 and month<=12),
+day integer check (day <=31),
+doy integer check (doy<=366),
+Tn float,
+Tx float,
+U2 float,
+Tdew float,
+es float,
+ea float,
+Rs float,
+Rnl float,
+K float,
+et0 float,
+pcp float,
+unique(x,y,ymd),
+foreign key (x,y) references "4km".pixels (x,y)
+);
+
+CREATE OR REPLACE FUNCTION cimis_insert_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+CASE NEW.y
+WHEN 000 THEN insert into "cimis4km".cimis000 VALUES (NEW.*);
+WHEN 001 THEN insert into "cimis4km".cimis001 VALUES (NEW.*);
+WHEN 002 THEN insert into "cimis4km".cimis002 VALUES (NEW.*);
+WHEN 003 THEN insert into "cimis4km".cimis003 VALUES (NEW.*);
+WHEN 004 THEN insert into "cimis4km".cimis004 VALUES (NEW.*);
+WHEN 005 THEN insert into "cimis4km".cimis005 VALUES (NEW.*);
+WHEN 006 THEN insert into "cimis4km".cimis006 VALUES (NEW.*);
+WHEN 007 THEN insert into "cimis4km".cimis007 VALUES (NEW.*);
+WHEN 008 THEN insert into "cimis4km".cimis008 VALUES (NEW.*);
+WHEN 009 THEN insert into "cimis4km".cimis009 VALUES (NEW.*);
+WHEN 010 THEN insert into "cimis4km".cimis010 VALUES (NEW.*);
+WHEN 011 THEN insert into "cimis4km".cimis011 VALUES (NEW.*);
+WHEN 012 THEN insert into "cimis4km".cimis012 VALUES (NEW.*);
+WHEN 013 THEN insert into "cimis4km".cimis013 VALUES (NEW.*);
+WHEN 014 THEN insert into "cimis4km".cimis014 VALUES (NEW.*);
+WHEN 015 THEN insert into "cimis4km".cimis015 VALUES (NEW.*);
+WHEN 016 THEN insert into "cimis4km".cimis016 VALUES (NEW.*);
+WHEN 017 THEN insert into "cimis4km".cimis017 VALUES (NEW.*);
+WHEN 018 THEN insert into "cimis4km".cimis018 VALUES (NEW.*);
+WHEN 019 THEN insert into "cimis4km".cimis019 VALUES (NEW.*);
+WHEN 020 THEN insert into "cimis4km".cimis020 VALUES (NEW.*);
+WHEN 021 THEN insert into "cimis4km".cimis021 VALUES (NEW.*);
+WHEN 022 THEN insert into "cimis4km".cimis022 VALUES (NEW.*);
+WHEN 023 THEN insert into "cimis4km".cimis023 VALUES (NEW.*);
+WHEN 024 THEN insert into "cimis4km".cimis024 VALUES (NEW.*);
+WHEN 025 THEN insert into "cimis4km".cimis025 VALUES (NEW.*);
+WHEN 026 THEN insert into "cimis4km".cimis026 VALUES (NEW.*);
+WHEN 027 THEN insert into "cimis4km".cimis027 VALUES (NEW.*);
+WHEN 028 THEN insert into "cimis4km".cimis028 VALUES (NEW.*);
+WHEN 029 THEN insert into "cimis4km".cimis029 VALUES (NEW.*);
+WHEN 030 THEN insert into "cimis4km".cimis030 VALUES (NEW.*);
+WHEN 031 THEN insert into "cimis4km".cimis031 VALUES (NEW.*);
+WHEN 032 THEN insert into "cimis4km".cimis032 VALUES (NEW.*);
+WHEN 033 THEN insert into "cimis4km".cimis033 VALUES (NEW.*);
+WHEN 034 THEN insert into "cimis4km".cimis034 VALUES (NEW.*);
+WHEN 035 THEN insert into "cimis4km".cimis035 VALUES (NEW.*);
+WHEN 036 THEN insert into "cimis4km".cimis036 VALUES (NEW.*);
+WHEN 037 THEN insert into "cimis4km".cimis037 VALUES (NEW.*);
+WHEN 038 THEN insert into "cimis4km".cimis038 VALUES (NEW.*);
+WHEN 039 THEN insert into "cimis4km".cimis039 VALUES (NEW.*);
+WHEN 040 THEN insert into "cimis4km".cimis040 VALUES (NEW.*);
+WHEN 041 THEN insert into "cimis4km".cimis041 VALUES (NEW.*);
+WHEN 042 THEN insert into "cimis4km".cimis042 VALUES (NEW.*);
+WHEN 043 THEN insert into "cimis4km".cimis043 VALUES (NEW.*);
+WHEN 044 THEN insert into "cimis4km".cimis044 VALUES (NEW.*);
+WHEN 045 THEN insert into "cimis4km".cimis045 VALUES (NEW.*);
+WHEN 046 THEN insert into "cimis4km".cimis046 VALUES (NEW.*);
+WHEN 047 THEN insert into "cimis4km".cimis047 VALUES (NEW.*);
+WHEN 048 THEN insert into "cimis4km".cimis048 VALUES (NEW.*);
+WHEN 049 THEN insert into "cimis4km".cimis049 VALUES (NEW.*);
+WHEN 050 THEN insert into "cimis4km".cimis050 VALUES (NEW.*);
+WHEN 051 THEN insert into "cimis4km".cimis051 VALUES (NEW.*);
+WHEN 052 THEN insert into "cimis4km".cimis052 VALUES (NEW.*);
+WHEN 053 THEN insert into "cimis4km".cimis053 VALUES (NEW.*);
+WHEN 054 THEN insert into "cimis4km".cimis054 VALUES (NEW.*);
+WHEN 055 THEN insert into "cimis4km".cimis055 VALUES (NEW.*);
+WHEN 056 THEN insert into "cimis4km".cimis056 VALUES (NEW.*);
+WHEN 057 THEN insert into "cimis4km".cimis057 VALUES (NEW.*);
+WHEN 058 THEN insert into "cimis4km".cimis058 VALUES (NEW.*);
+WHEN 059 THEN insert into "cimis4km".cimis059 VALUES (NEW.*);
+WHEN 060 THEN insert into "cimis4km".cimis060 VALUES (NEW.*);
+WHEN 061 THEN insert into "cimis4km".cimis061 VALUES (NEW.*);
+WHEN 062 THEN insert into "cimis4km".cimis062 VALUES (NEW.*);
+WHEN 063 THEN insert into "cimis4km".cimis063 VALUES (NEW.*);
+WHEN 064 THEN insert into "cimis4km".cimis064 VALUES (NEW.*);
+WHEN 065 THEN insert into "cimis4km".cimis065 VALUES (NEW.*);
+WHEN 066 THEN insert into "cimis4km".cimis066 VALUES (NEW.*);
+WHEN 067 THEN insert into "cimis4km".cimis067 VALUES (NEW.*);
+WHEN 068 THEN insert into "cimis4km".cimis068 VALUES (NEW.*);
+WHEN 069 THEN insert into "cimis4km".cimis069 VALUES (NEW.*);
+WHEN 070 THEN insert into "cimis4km".cimis070 VALUES (NEW.*);
+WHEN 071 THEN insert into "cimis4km".cimis071 VALUES (NEW.*);
+WHEN 072 THEN insert into "cimis4km".cimis072 VALUES (NEW.*);
+WHEN 073 THEN insert into "cimis4km".cimis073 VALUES (NEW.*);
+WHEN 074 THEN insert into "cimis4km".cimis074 VALUES (NEW.*);
+WHEN 075 THEN insert into "cimis4km".cimis075 VALUES (NEW.*);
+WHEN 076 THEN insert into "cimis4km".cimis076 VALUES (NEW.*);
+WHEN 077 THEN insert into "cimis4km".cimis077 VALUES (NEW.*);
+WHEN 078 THEN insert into "cimis4km".cimis078 VALUES (NEW.*);
+WHEN 079 THEN insert into "cimis4km".cimis079 VALUES (NEW.*);
+WHEN 080 THEN insert into "cimis4km".cimis080 VALUES (NEW.*);
+WHEN 081 THEN insert into "cimis4km".cimis081 VALUES (NEW.*);
+WHEN 082 THEN insert into "cimis4km".cimis082 VALUES (NEW.*);
+WHEN 083 THEN insert into "cimis4km".cimis083 VALUES (NEW.*);
+WHEN 084 THEN insert into "cimis4km".cimis084 VALUES (NEW.*);
+WHEN 085 THEN insert into "cimis4km".cimis085 VALUES (NEW.*);
+WHEN 086 THEN insert into "cimis4km".cimis086 VALUES (NEW.*);
+WHEN 087 THEN insert into "cimis4km".cimis087 VALUES (NEW.*);
+WHEN 088 THEN insert into "cimis4km".cimis088 VALUES (NEW.*);
+WHEN 089 THEN insert into "cimis4km".cimis089 VALUES (NEW.*);
+WHEN 090 THEN insert into "cimis4km".cimis090 VALUES (NEW.*);
+WHEN 091 THEN insert into "cimis4km".cimis091 VALUES (NEW.*);
+WHEN 092 THEN insert into "cimis4km".cimis092 VALUES (NEW.*);
+WHEN 093 THEN insert into "cimis4km".cimis093 VALUES (NEW.*);
+WHEN 094 THEN insert into "cimis4km".cimis094 VALUES (NEW.*);
+WHEN 095 THEN insert into "cimis4km".cimis095 VALUES (NEW.*);
+WHEN 096 THEN insert into "cimis4km".cimis096 VALUES (NEW.*);
+WHEN 097 THEN insert into "cimis4km".cimis097 VALUES (NEW.*);
+WHEN 098 THEN insert into "cimis4km".cimis098 VALUES (NEW.*);
+WHEN 099 THEN insert into "cimis4km".cimis099 VALUES (NEW.*);
+WHEN 100 THEN insert into "cimis4km".cimis100 VALUES (NEW.*);
+WHEN 101 THEN insert into "cimis4km".cimis101 VALUES (NEW.*);
+WHEN 102 THEN insert into "cimis4km".cimis102 VALUES (NEW.*);
+WHEN 103 THEN insert into "cimis4km".cimis103 VALUES (NEW.*);
+WHEN 104 THEN insert into "cimis4km".cimis104 VALUES (NEW.*);
+WHEN 105 THEN insert into "cimis4km".cimis105 VALUES (NEW.*);
+WHEN 106 THEN insert into "cimis4km".cimis106 VALUES (NEW.*);
+WHEN 107 THEN insert into "cimis4km".cimis107 VALUES (NEW.*);
+WHEN 108 THEN insert into "cimis4km".cimis108 VALUES (NEW.*);
+WHEN 109 THEN insert into "cimis4km".cimis109 VALUES (NEW.*);
+WHEN 110 THEN insert into "cimis4km".cimis110 VALUES (NEW.*);
+WHEN 111 THEN insert into "cimis4km".cimis111 VALUES (NEW.*);
+WHEN 112 THEN insert into "cimis4km".cimis112 VALUES (NEW.*);
+WHEN 113 THEN insert into "cimis4km".cimis113 VALUES (NEW.*);
+WHEN 114 THEN insert into "cimis4km".cimis114 VALUES (NEW.*);
+WHEN 115 THEN insert into "cimis4km".cimis115 VALUES (NEW.*);
+WHEN 116 THEN insert into "cimis4km".cimis116 VALUES (NEW.*);
+WHEN 117 THEN insert into "cimis4km".cimis117 VALUES (NEW.*);
+WHEN 118 THEN insert into "cimis4km".cimis118 VALUES (NEW.*);
+WHEN 119 THEN insert into "cimis4km".cimis119 VALUES (NEW.*);
+WHEN 120 THEN insert into "cimis4km".cimis120 VALUES (NEW.*);
+WHEN 121 THEN insert into "cimis4km".cimis121 VALUES (NEW.*);
+WHEN 122 THEN insert into "cimis4km".cimis122 VALUES (NEW.*);
+WHEN 123 THEN insert into "cimis4km".cimis123 VALUES (NEW.*);
+WHEN 124 THEN insert into "cimis4km".cimis124 VALUES (NEW.*);
+WHEN 125 THEN insert into "cimis4km".cimis125 VALUES (NEW.*);
+WHEN 126 THEN insert into "cimis4km".cimis126 VALUES (NEW.*);
+WHEN 127 THEN insert into "cimis4km".cimis127 VALUES (NEW.*);
+WHEN 128 THEN insert into "cimis4km".cimis128 VALUES (NEW.*);
+WHEN 129 THEN insert into "cimis4km".cimis129 VALUES (NEW.*);
+WHEN 130 THEN insert into "cimis4km".cimis130 VALUES (NEW.*);
+WHEN 131 THEN insert into "cimis4km".cimis131 VALUES (NEW.*);
+WHEN 132 THEN insert into "cimis4km".cimis132 VALUES (NEW.*);
+WHEN 133 THEN insert into "cimis4km".cimis133 VALUES (NEW.*);
+WHEN 134 THEN insert into "cimis4km".cimis134 VALUES (NEW.*);
+WHEN 135 THEN insert into "cimis4km".cimis135 VALUES (NEW.*);
+WHEN 136 THEN insert into "cimis4km".cimis136 VALUES (NEW.*);
+WHEN 137 THEN insert into "cimis4km".cimis137 VALUES (NEW.*);
+WHEN 138 THEN insert into "cimis4km".cimis138 VALUES (NEW.*);
+WHEN 139 THEN insert into "cimis4km".cimis139 VALUES (NEW.*);
+WHEN 140 THEN insert into "cimis4km".cimis140 VALUES (NEW.*);
+WHEN 141 THEN insert into "cimis4km".cimis141 VALUES (NEW.*);
+WHEN 142 THEN insert into "cimis4km".cimis142 VALUES (NEW.*);
+WHEN 143 THEN insert into "cimis4km".cimis143 VALUES (NEW.*);
+WHEN 144 THEN insert into "cimis4km".cimis144 VALUES (NEW.*);
+WHEN 145 THEN insert into "cimis4km".cimis145 VALUES (NEW.*);
+WHEN 146 THEN insert into "cimis4km".cimis146 VALUES (NEW.*);
+WHEN 147 THEN insert into "cimis4km".cimis147 VALUES (NEW.*);
+WHEN 148 THEN insert into "cimis4km".cimis148 VALUES (NEW.*);
+WHEN 149 THEN insert into "cimis4km".cimis149 VALUES (NEW.*);
+WHEN 150 THEN insert into "cimis4km".cimis150 VALUES (NEW.*);
+WHEN 151 THEN insert into "cimis4km".cimis151 VALUES (NEW.*);
+WHEN 152 THEN insert into "cimis4km".cimis152 VALUES (NEW.*);
+WHEN 153 THEN insert into "cimis4km".cimis153 VALUES (NEW.*);
+WHEN 154 THEN insert into "cimis4km".cimis154 VALUES (NEW.*);
+WHEN 155 THEN insert into "cimis4km".cimis155 VALUES (NEW.*);
+WHEN 156 THEN insert into "cimis4km".cimis156 VALUES (NEW.*);
+WHEN 157 THEN insert into "cimis4km".cimis157 VALUES (NEW.*);
+WHEN 158 THEN insert into "cimis4km".cimis158 VALUES (NEW.*);
+WHEN 159 THEN insert into "cimis4km".cimis159 VALUES (NEW.*);
+WHEN 160 THEN insert into "cimis4km".cimis160 VALUES (NEW.*);
+WHEN 161 THEN insert into "cimis4km".cimis161 VALUES (NEW.*);
+WHEN 162 THEN insert into "cimis4km".cimis162 VALUES (NEW.*);
+WHEN 163 THEN insert into "cimis4km".cimis163 VALUES (NEW.*);
+WHEN 164 THEN insert into "cimis4km".cimis164 VALUES (NEW.*);
+WHEN 165 THEN insert into "cimis4km".cimis165 VALUES (NEW.*);
+WHEN 166 THEN insert into "cimis4km".cimis166 VALUES (NEW.*);
+WHEN 167 THEN insert into "cimis4km".cimis167 VALUES (NEW.*);
+WHEN 168 THEN insert into "cimis4km".cimis168 VALUES (NEW.*);
+WHEN 169 THEN insert into "cimis4km".cimis169 VALUES (NEW.*);
+WHEN 170 THEN insert into "cimis4km".cimis170 VALUES (NEW.*);
+WHEN 171 THEN insert into "cimis4km".cimis171 VALUES (NEW.*);
+WHEN 172 THEN insert into "cimis4km".cimis172 VALUES (NEW.*);
+WHEN 173 THEN insert into "cimis4km".cimis173 VALUES (NEW.*);
+WHEN 174 THEN insert into "cimis4km".cimis174 VALUES (NEW.*);
+WHEN 175 THEN insert into "cimis4km".cimis175 VALUES (NEW.*);
+WHEN 176 THEN insert into "cimis4km".cimis176 VALUES (NEW.*);
+WHEN 177 THEN insert into "cimis4km".cimis177 VALUES (NEW.*);
+WHEN 178 THEN insert into "cimis4km".cimis178 VALUES (NEW.*);
+WHEN 179 THEN insert into "cimis4km".cimis179 VALUES (NEW.*);
+WHEN 180 THEN insert into "cimis4km".cimis180 VALUES (NEW.*);
+WHEN 181 THEN insert into "cimis4km".cimis181 VALUES (NEW.*);
+WHEN 182 THEN insert into "cimis4km".cimis182 VALUES (NEW.*);
+WHEN 183 THEN insert into "cimis4km".cimis183 VALUES (NEW.*);
+WHEN 184 THEN insert into "cimis4km".cimis184 VALUES (NEW.*);
+WHEN 185 THEN insert into "cimis4km".cimis185 VALUES (NEW.*);
+WHEN 186 THEN insert into "cimis4km".cimis186 VALUES (NEW.*);
+WHEN 187 THEN insert into "cimis4km".cimis187 VALUES (NEW.*);
+WHEN 188 THEN insert into "cimis4km".cimis188 VALUES (NEW.*);
+WHEN 189 THEN insert into "cimis4km".cimis189 VALUES (NEW.*);
+WHEN 190 THEN insert into "cimis4km".cimis190 VALUES (NEW.*);
+WHEN 191 THEN insert into "cimis4km".cimis191 VALUES (NEW.*);
+WHEN 192 THEN insert into "cimis4km".cimis192 VALUES (NEW.*);
+WHEN 193 THEN insert into "cimis4km".cimis193 VALUES (NEW.*);
+WHEN 194 THEN insert into "cimis4km".cimis194 VALUES (NEW.*);
+WHEN 195 THEN insert into "cimis4km".cimis195 VALUES (NEW.*);
+WHEN 196 THEN insert into "cimis4km".cimis196 VALUES (NEW.*);
+WHEN 197 THEN insert into "cimis4km".cimis197 VALUES (NEW.*);
+WHEN 198 THEN insert into "cimis4km".cimis198 VALUES (NEW.*);
+WHEN 199 THEN insert into "cimis4km".cimis199 VALUES (NEW.*);
+WHEN 200 THEN insert into "cimis4km".cimis200 VALUES (NEW.*);
+WHEN 201 THEN insert into "cimis4km".cimis201 VALUES (NEW.*);
+WHEN 202 THEN insert into "cimis4km".cimis202 VALUES (NEW.*);
+WHEN 203 THEN insert into "cimis4km".cimis203 VALUES (NEW.*);
+WHEN 204 THEN insert into "cimis4km".cimis204 VALUES (NEW.*);
+WHEN 205 THEN insert into "cimis4km".cimis205 VALUES (NEW.*);
+WHEN 206 THEN insert into "cimis4km".cimis206 VALUES (NEW.*);
+WHEN 207 THEN insert into "cimis4km".cimis207 VALUES (NEW.*);
+WHEN 208 THEN insert into "cimis4km".cimis208 VALUES (NEW.*);
+WHEN 209 THEN insert into "cimis4km".cimis209 VALUES (NEW.*);
+WHEN 210 THEN insert into "cimis4km".cimis210 VALUES (NEW.*);
+WHEN 211 THEN insert into "cimis4km".cimis211 VALUES (NEW.*);
+WHEN 212 THEN insert into "cimis4km".cimis212 VALUES (NEW.*);
+WHEN 213 THEN insert into "cimis4km".cimis213 VALUES (NEW.*);
+WHEN 214 THEN insert into "cimis4km".cimis214 VALUES (NEW.*);
+WHEN 215 THEN insert into "cimis4km".cimis215 VALUES (NEW.*);
+WHEN 216 THEN insert into "cimis4km".cimis216 VALUES (NEW.*);
+WHEN 217 THEN insert into "cimis4km".cimis217 VALUES (NEW.*);
+WHEN 218 THEN insert into "cimis4km".cimis218 VALUES (NEW.*);
+WHEN 219 THEN insert into "cimis4km".cimis219 VALUES (NEW.*);
+WHEN 220 THEN insert into "cimis4km".cimis220 VALUES (NEW.*);
+WHEN 221 THEN insert into "cimis4km".cimis221 VALUES (NEW.*);
+WHEN 222 THEN insert into "cimis4km".cimis222 VALUES (NEW.*);
+WHEN 223 THEN insert into "cimis4km".cimis223 VALUES (NEW.*);
+WHEN 224 THEN insert into "cimis4km".cimis224 VALUES (NEW.*);
+WHEN 225 THEN insert into "cimis4km".cimis225 VALUES (NEW.*);
+WHEN 226 THEN insert into "cimis4km".cimis226 VALUES (NEW.*);
+WHEN 227 THEN insert into "cimis4km".cimis227 VALUES (NEW.*);
+WHEN 228 THEN insert into "cimis4km".cimis228 VALUES (NEW.*);
+WHEN 229 THEN insert into "cimis4km".cimis229 VALUES (NEW.*);
+WHEN 230 THEN insert into "cimis4km".cimis230 VALUES (NEW.*);
+WHEN 231 THEN insert into "cimis4km".cimis231 VALUES (NEW.*);
+WHEN 232 THEN insert into "cimis4km".cimis232 VALUES (NEW.*);
+WHEN 233 THEN insert into "cimis4km".cimis233 VALUES (NEW.*);
+WHEN 234 THEN insert into "cimis4km".cimis234 VALUES (NEW.*);
+WHEN 235 THEN insert into "cimis4km".cimis235 VALUES (NEW.*);
+WHEN 236 THEN insert into "cimis4km".cimis236 VALUES (NEW.*);
+WHEN 237 THEN insert into "cimis4km".cimis237 VALUES (NEW.*);
+WHEN 238 THEN insert into "cimis4km".cimis238 VALUES (NEW.*);
+WHEN 239 THEN insert into "cimis4km".cimis239 VALUES (NEW.*);
+WHEN 240 THEN insert into "cimis4km".cimis240 VALUES (NEW.*);
+WHEN 241 THEN insert into "cimis4km".cimis241 VALUES (NEW.*);
+WHEN 242 THEN insert into "cimis4km".cimis242 VALUES (NEW.*);
+WHEN 243 THEN insert into "cimis4km".cimis243 VALUES (NEW.*);
+WHEN 244 THEN insert into "cimis4km".cimis244 VALUES (NEW.*);
+WHEN 245 THEN insert into "cimis4km".cimis245 VALUES (NEW.*);
+WHEN 246 THEN insert into "cimis4km".cimis246 VALUES (NEW.*);
+WHEN 247 THEN insert into "cimis4km".cimis247 VALUES (NEW.*);
+WHEN 248 THEN insert into "cimis4km".cimis248 VALUES (NEW.*);
+WHEN 249 THEN insert into "cimis4km".cimis249 VALUES (NEW.*);
+WHEN 250 THEN insert into "cimis4km".cimis250 VALUES (NEW.*);
+WHEN 251 THEN insert into "cimis4km".cimis251 VALUES (NEW.*);
+WHEN 252 THEN insert into "cimis4km".cimis252 VALUES (NEW.*);
+WHEN 253 THEN insert into "cimis4km".cimis253 VALUES (NEW.*);
+WHEN 254 THEN insert into "cimis4km".cimis254 VALUES (NEW.*);
+WHEN 255 THEN insert into "cimis4km".cimis255 VALUES (NEW.*);
+WHEN 256 THEN insert into "cimis4km".cimis256 VALUES (NEW.*);
+WHEN 257 THEN insert into "cimis4km".cimis257 VALUES (NEW.*);
+WHEN 258 THEN insert into "cimis4km".cimis258 VALUES (NEW.*);
+WHEN 259 THEN insert into "cimis4km".cimis259 VALUES (NEW.*);
+WHEN 260 THEN insert into "cimis4km".cimis260 VALUES (NEW.*);
+WHEN 261 THEN insert into "cimis4km".cimis261 VALUES (NEW.*);
+WHEN 262 THEN insert into "cimis4km".cimis262 VALUES (NEW.*);
+WHEN 263 THEN insert into "cimis4km".cimis263 VALUES (NEW.*);
+WHEN 264 THEN insert into "cimis4km".cimis264 VALUES (NEW.*);
+WHEN 265 THEN insert into "cimis4km".cimis265 VALUES (NEW.*);
+WHEN 266 THEN insert into "cimis4km".cimis266 VALUES (NEW.*);
+WHEN 267 THEN insert into "cimis4km".cimis267 VALUES (NEW.*);
+WHEN 268 THEN insert into "cimis4km".cimis268 VALUES (NEW.*);
+WHEN 269 THEN insert into "cimis4km".cimis269 VALUES (NEW.*);
+WHEN 270 THEN insert into "cimis4km".cimis270 VALUES (NEW.*);
+WHEN 271 THEN insert into "cimis4km".cimis271 VALUES (NEW.*);
+WHEN 272 THEN insert into "cimis4km".cimis272 VALUES (NEW.*);
+WHEN 273 THEN insert into "cimis4km".cimis273 VALUES (NEW.*);
+WHEN 274 THEN insert into "cimis4km".cimis274 VALUES (NEW.*);
+WHEN 275 THEN insert into "cimis4km".cimis275 VALUES (NEW.*);
+WHEN 276 THEN insert into "cimis4km".cimis276 VALUES (NEW.*);
+WHEN 277 THEN insert into "cimis4km".cimis277 VALUES (NEW.*);
+WHEN 278 THEN insert into "cimis4km".cimis278 VALUES (NEW.*);
+WHEN 279 THEN insert into "cimis4km".cimis279 VALUES (NEW.*);
+WHEN 280 THEN insert into "cimis4km".cimis280 VALUES (NEW.*);
+WHEN 281 THEN insert into "cimis4km".cimis281 VALUES (NEW.*);
+WHEN 282 THEN insert into "cimis4km".cimis282 VALUES (NEW.*);
+WHEN 283 THEN insert into "cimis4km".cimis283 VALUES (NEW.*);
+WHEN 284 THEN insert into "cimis4km".cimis284 VALUES (NEW.*);
+WHEN 285 THEN insert into "cimis4km".cimis285 VALUES (NEW.*);
+WHEN 286 THEN insert into "cimis4km".cimis286 VALUES (NEW.*);
+WHEN 287 THEN insert into "cimis4km".cimis287 VALUES (NEW.*);
+WHEN 288 THEN insert into "cimis4km".cimis288 VALUES (NEW.*);
+WHEN 289 THEN insert into "cimis4km".cimis289 VALUES (NEW.*);
+WHEN 290 THEN insert into "cimis4km".cimis290 VALUES (NEW.*);
+WHEN 291 THEN insert into "cimis4km".cimis291 VALUES (NEW.*);
+WHEN 292 THEN insert into "cimis4km".cimis292 VALUES (NEW.*);
+WHEN 293 THEN insert into "cimis4km".cimis293 VALUES (NEW.*);
+WHEN 294 THEN insert into "cimis4km".cimis294 VALUES (NEW.*);
+WHEN 295 THEN insert into "cimis4km".cimis295 VALUES (NEW.*);
+WHEN 296 THEN insert into "cimis4km".cimis296 VALUES (NEW.*);
+WHEN 297 THEN insert into "cimis4km".cimis297 VALUES (NEW.*);
+WHEN 298 THEN insert into "cimis4km".cimis298 VALUES (NEW.*);
+WHEN 299 THEN insert into "cimis4km".cimis299 VALUES (NEW.*);
+ELSE insert into "cimis4km".cimis VALUES (NEW.*);
+END CASE;
+RETURN NULL;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER insert_cimis_trigger
+BEFORE INSERT ON "cimis4km".cimis FOR EACH ROW 
+EXECUTE PROCEDURE cimis_insert_trigger();
+
+END;
