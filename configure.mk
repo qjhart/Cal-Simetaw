@@ -27,15 +27,12 @@ down:=${fs-root}/data
 # Input Postgres DB
 db:=/home/quinn/etosimetaw/db
 database:=etosimetaw
-#PG:=psql --cluster 8.4/eto -d ${database}
-PG:=psql -d ${database}
+PG:=psql --cluster 8.4/eto -d ${database}
 PG-CSV:= ${PG} -A -F',' --pset footer
 PG-LIST:=${PG} -A -R' ' -t 
 PG-SITE:= ${PG} -A -F'|' -t
 #PG:= psql -d ${db} -h casil.ucdavis.edu -U qjhart -p 5433
 
-# Row splitting data
-rows:=$(shell seq -f %03g 0 299)
 
 #v.in.ogr:=v.in.ogr -e dsn="PG:dbname=${db} host=casil.ucdavis.edu port=5433 user=qjhart"
 v.in.ogr:=v.in.ogr -e dsn="PG:dbname=${database} port=5433"
