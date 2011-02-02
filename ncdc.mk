@@ -25,28 +25,30 @@ endif
 
 downloads:=2404074213582 7985364213578 3565564213569 8792304213571 1997-2007
 
-stations:=$(patsubst %,db/ncdc.%stn.txt,${downloads})
-weather:=$(patsubst %,db/ncdc.%dat.txt,${downloads})
+stations:=$(patsubst %,${db}/ncdc.%stn.txt,${downloads})
+weather:=$(patsubst %,${db}/ncdc.%dat.txt,${downloads})
 
-db/ncdc:
+db:${db}/ncdc ${db}/ncdc.stations ${db}/ncdc.weather ${db}/ncdc.m_monthly_weather ${db}/ncdc.m_delta_weather
+
+${db}/ncdc:
 	${PG} -f ncdc/schema.sql
 	touch $@
 
-.PHONY: stations
-stations:${stations}
+${db}/ncdc.stations:${db}/ncdc ${stations}
+	touch $@
 
-${stations}:db/%:../data/%
+${stations}:${db}/%:../data/%
 	cat ncdc/add_station.sql | sed -e "s|stn.txt|`pwd`/$<|" | ${PG} -f -
 	touch $@
 
-.PHONY: weather
-weather:${weather}
+${db}/ncdc.weather:${db}/ncdc ${weather}
+	touch $@
 
-${weather}:db/%:../data/%
+${weather}:${db}/%:../data/%
 	cat ncdc/add_weather.sql | sed -e "s|dat.txt|`pwd`/$<|" | ${PG} -f -
 	touch $@
 
-db/ncdc.prism.${MAPSET}:db/ncdc.prism.%:${rast}/mTx ${rast}/mTn ${rast}/mPCP
+${db}/ncdc.prism.${MAPSET}:${db}/ncdc.prism.%:${rast}/mTx ${rast}/mTn ${rast}/mPCP
 	$(PG) -c "delete from ncdc.prism where year=${YYYY} and month=${MM}";
 	$(PG) -F' ' -A -t -c "select x(centroid),y(centroid),station_id|| \
 	'|${YYYY}|${MM}' from ncdc.station" |\
@@ -55,7 +57,11 @@ db/ncdc.prism.${MAPSET}:db/ncdc.prism.%:${rast}/mTx ${rast}/mTn ${rast}/mPCP
 	${PG} -c "COPY ncdc.prism from STDIN using delimiters '|' with NULL as '*'"; 
 #	touch $@
 
-db/ncdc.m_delta_weather: db/ncdc
+${db}/ncdc.m_monthly_weather: ${db}/ncdc.weather
+	${PG} -f ncdc/m_monthly_weather.sql
+	touch $@
+
+${db}/ncdc.m_delta_weather: ${db}/ncdc.m_monthly_weather
 	${PG} -f ncdc/delta_weather.sql
 	touch $@
 

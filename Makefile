@@ -1,17 +1,21 @@
 #! /usr/bin/make -f 
 
+INC:=/home/quinn/etosimetaw/bin
+
 ifndef configure.mk
-include configure.mk
+include ${INC}/configure.mk
 endif
 
 ifndef monthly.mk
-include monthly.mk
+include ${INC}/monthly.mk
 endif
 
 ifndef daily.mk
-include daily.mk
+include ${INC}/daily.mk
 endif
 
-ifndef 4km.mk
-include 4km.mk
+ifndef daily4km.mk
+include ${INC}/daily4km.mk
 endif
+
+

@@ -6,7 +6,7 @@ set search_path=ncdc,public;
 
 create table station (
 station_id serial primary key,
-coopid integer,
+coopid varchar(6),
 wbnid integer,
 name varchar(30),
 country varchar(30),

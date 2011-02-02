@@ -1,6 +1,8 @@
 \set ON_ERROR_STOP 1
 BEGIN;
-set search_path=tmp,public;
+drop schema if exists ncdctmp cascade;
+create schema ncdctmp;
+set search_path=ncdctmp,public;
 
 create temp table dat (
 DSET integer,
@@ -140,5 +142,7 @@ select station_id,day,dset,elem,un,v,m,q from weather;
 --insert into m_monthly_weather select * from monthly_weather;
 
 END;
+
+drop schema ncdctmp cascade;
 
 

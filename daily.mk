@@ -6,7 +6,6 @@
 #yr=1948; for d in `seq 0 3285`; do m=`date --date="${yr}-01-01 + $d days" --rfc-3339=date`; y=${m%%-*};  g.mapset location=$y mapset=$m; time ~/etosimetaw/bin/daily.mk ETo RF; done
 
 INC:=/home/quinn/etosimetaw/bin
-
 ifndef configure.mk
 include ${INC}/configure.mk
 endif
@@ -133,11 +132,11 @@ $(rast)/ETo:$(rast)/ETh
 	@${NOMASK};\
 	r.mapcalc "ETo=ETh*cfhs@4km" 2>/dev/null;\
 
-.PHONY:RD
-RD:$(rast)/RD
-$(rast)/RD: $(rast)/ETo $(rast)/PCP
-	@${NOMASK};\
-	r.mapcalc "RD=if(ETo>PCP,0,1)";
+#.PHONY:RD
+#RD:$(rast)/RD
+#$(rast)/RD: $(rast)/ETo $(rast)/PCP
+#	@${NOMASK};\
+#	r.mapcalc "RD=if(ETo>PCP,0,1)";
 
 .PHONY:RF
 RF:$(rast)/RF
@@ -147,12 +146,13 @@ $(rast)/RF: $(rast)/ETo $(rast)/PCP
 
 endef
 
-ifeq (${DD},)
-  $(error ${MAPSET} is not a daily MAPSET)
-endif
+ifdef is_daily
 
 $(eval $(call daily))
 $(foreach p,Tx Tn PCP,$(eval $(call ncdc,$(p))))
 $(foreach p,PCP,$(eval $(call mult-day,$(p))))
 $(foreach p,Tx Tn,$(eval $(call add-day,$(p))))
+
+endif
+
 
